@@ -1,6 +1,65 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function validHandle(handle) { return handle is string && handle.matches('[a-z][a-z0-9_]{2,19}'); }
+    function profileRef(uid) { return /databases/$(database)/documents/profiles/$(uid); }
+    function limitRef(uid) { return /databases/$(database)/documents/profileLimits/$(uid); }
+    function handleRef(handle) { return /databases/$(database)/documents/handles/$(handle); }
+    function validSocial(links, index) {
+      return links.size() <= index || (links[index] is string && links[index].size() <= 500
+        && links[index].matches('https://[^\\s/@:]+(\\.[^\\s/@:]+)+(:[0-9]+)?([/?#][^\\s]*)?'));
+    }
+    function validProfile(data) {
+      return data.keys().hasAll(['name', 'handle', 'bio', 'links', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'handle', 'bio', 'links', 'createdAt', 'updatedAt'])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 30 && data.name.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+        && validHandle(data.handle) && data.bio is string && data.bio.size() <= 1000
+        && data.links is list && data.links.size() <= 5 && data.links.toSet().size() == data.links.size()
+        && validSocial(data.links, 0) && validSocial(data.links, 1) && validSocial(data.links, 2) && validSocial(data.links, 3) && validSocial(data.links, 4)
+        && data.updatedAt == request.time
+        && getAfter(handleRef(data.handle)).data.uid == request.auth.uid;
+    }
+    match /profiles/{uid} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if request.auth != null && request.auth.uid == uid && validProfile(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && getAfter(limitRef(uid)).data.last == null && getAfter(limitRef(uid)).data.previous == null;
+      allow update: if request.auth != null && request.auth.uid == uid && validProfile(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'handle', 'bio', 'links', 'updatedAt'])
+        && (request.resource.data.handle == resource.data.handle || (
+          !existsAfter(handleRef(resource.data.handle))
+          && getAfter(limitRef(uid)).data.last == request.time
+          && getAfter(limitRef(uid)).data.previous == get(limitRef(uid)).data.last
+          && (get(limitRef(uid)).data.previous == null || get(limitRef(uid)).data.previous <= request.time - duration.value(14, 'd'))));
+      allow delete: if false;
+    }
+    match /handles/{handle} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if request.auth != null && validHandle(handle)
+        && request.resource.data.keys().hasAll(['uid']) && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid
+        && getAfter(profileRef(request.auth.uid)).data.handle == handle;
+      allow update: if false;
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid
+        && getAfter(profileRef(request.auth.uid)).data.handle != handle;
+    }
+    match /profileLimits/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasAll(['last', 'previous']) && request.resource.data.keys().hasOnly(['last', 'previous'])
+        && request.resource.data.last == null && request.resource.data.previous == null
+        && !exists(profileRef(uid)) && getAfter(profileRef(uid)).data.createdAt == request.time;
+      allow update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasAll(['last', 'previous']) && request.resource.data.keys().hasOnly(['last', 'previous'])
+        && request.resource.data.last == request.time && request.resource.data.previous == resource.data.last
+        && (resource.data.previous == null || resource.data.previous <= request.time - duration.value(14, 'd'))
+        && get(profileRef(uid)).data.handle != getAfter(profileRef(uid)).data.handle;
+      allow delete: if false;
+    }
+
     match /posts/{postId} {
       function signedIn() { return request.auth != null; }
       function owner() { return signedIn() && resource.data.authorId == request.auth.uid; }

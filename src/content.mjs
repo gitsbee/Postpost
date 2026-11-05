@@ -4,7 +4,7 @@ export function extractTags(body) {
 
 export function matchesSearch(post, search) {
   const terms = search.trim().normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean);
-  const text = `${post.body} ${post.authorName}`.normalize('NFKC').toLowerCase();
+  const text = `${post.body} ${post.authorName} ${post.authorHandle || ''}`.normalize('NFKC').toLowerCase();
   const tags = [...extractTags(post.body), ...(post.tags || [])];
-  return terms.every(term => term.startsWith('#') ? tags.includes(term.slice(1)) : text.includes(term));
+  return terms.every(term => term.startsWith('#') ? tags.includes(term.slice(1)) : term.startsWith('@') ? post.authorHandle === term.slice(1) : text.includes(term));
 }

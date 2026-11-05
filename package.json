@@ -10,7 +10,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build && node scripts/create-pages-routes.mjs",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "node --test tests/validation.test.mjs tests/content.test.mjs",
+    "test": "node --test tests/validation.test.mjs tests/content.test.mjs tests/profile.test.mjs",
     "test:rules": "npx --yes firebase-tools@15.35.0 emulators:exec --only firestore --project demo-postpost \"node --test tests/firestore.rules.test.mjs\"",
     "test:e2e": "npx --yes firebase-tools@15.35.0 emulators:exec --only auth,firestore --project demo-postpost \"playwright test\""
   },

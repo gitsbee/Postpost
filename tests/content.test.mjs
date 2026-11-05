@@ -16,3 +16,10 @@ test('search uses all words and exact normalized hashtag matches', () => {
   assert.equal(matchesSearch(post,'#개발 없는말'),false);
   assert.equal(matchesSearch(post,'   '),true);
 });
+
+test('current handles can be searched exactly without exposing internal account IDs', () => {
+  const post = { body: 'hello', authorName: '새 이름', authorHandle: 'my_handle', tags: [] };
+  assert.equal(matchesSearch(post, '@MY_HANDLE'), true);
+  assert.equal(matchesSearch(post, '@my'), false);
+  assert.equal(matchesSearch(post, '새 이름'), true);
+});

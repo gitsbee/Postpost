@@ -118,3 +118,74 @@ test('reposts reference live originals, cannot form chains, and can be removed a
   await assertFails(changeReaction('reader', 'like'));
   await assertFails(setDoc(doc(environment.authenticatedContext('other').firestore(), 'posts/repost_other_first'), { ...data, authorId: 'other' }));
 });
+
+async function createProfile(uid, handle) {
+  const store = environment.authenticatedContext(uid).firestore();
+  return runTransaction(store, async tx => {
+    await tx.get(doc(store, 'handles', handle));
+    tx.set(doc(store, 'profiles', uid), { name: uid, handle, bio: '', links: [], createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    tx.set(doc(store, 'handles', handle), { uid });
+    tx.set(doc(store, 'profileLimits', uid), { last: null, previous: null });
+  });
+}
+async function changeHandle(uid, handle) {
+  const store = environment.authenticatedContext(uid).firestore();
+  return runTransaction(store, async tx => {
+    const profile = await tx.get(doc(store, 'profiles', uid));
+    const quota = await tx.get(doc(store, 'profileLimits', uid));
+    await tx.get(doc(store, 'handles', handle));
+    tx.update(doc(store, 'profiles', uid), { handle, updatedAt: serverTimestamp() });
+    tx.delete(doc(store, 'handles', profile.data().handle));
+    tx.set(doc(store, 'handles', handle), { uid });
+    tx.set(doc(store, 'profileLimits', uid), { last: serverTimestamp(), previous: quota.data().last });
+  });
+}
+test('handles are unique under concurrent claims and registry ownership cannot be forged', async () => {
+  const attempts = await Promise.allSettled([createProfile('alice', 'shared'), createProfile('bob', 'shared')]);
+  if (attempts.filter(item => item.status === 'fulfilled').length !== 1) throw new Error('Handle uniqueness failed');
+  const winner = attempts[0].status === 'fulfilled' ? 'alice' : 'bob';
+  const loser = winner === 'alice' ? 'bob' : 'alice';
+  const winnerStore = environment.authenticatedContext(winner).firestore();
+  const loserStore = environment.authenticatedContext(loser).firestore();
+  await assertFails(setDoc(doc(loserStore, 'handles/shared'), { uid: loser }));
+  await assertFails(setDoc(doc(winnerStore, 'handles/extra'), { uid: winner }));
+  await assertFails(deleteDoc(doc(winnerStore, 'handles/shared')));
+  await assertFails(updateDoc(doc(winnerStore, 'profiles', winner), { handle: 'rogue', updatedAt: serverTimestamp() }));
+});
+test('initial handle is free; only two changes per rolling 14 days are permitted', async () => {
+  await assertSucceeds(createProfile('alice', 'alice_one'));
+  await assertSucceeds(changeHandle('alice', 'alice_two'));
+  await assertSucceeds(changeHandle('alice', 'alice_three'));
+  await assertFails(changeHandle('alice', 'alice_four'));
+  const store = environment.authenticatedContext('alice').firestore();
+  await assertFails(setDoc(doc(store, 'profileLimits/alice'), { last: null, previous: null }));
+  await assertFails(deleteDoc(doc(store, 'profileLimits/alice')));
+  await assertFails(deleteDoc(doc(store, 'profiles/alice')));
+  await assertSucceeds(updateDoc(doc(store, 'profiles/alice'), { name: '새 이름', bio: '소개 수정은 핸들 횟수와 별개', updatedAt: serverTimestamp() }));
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'profileLimits/alice'), {
+      last: Timestamp.fromMillis(Date.now() - 24 * 60 * 60 * 1000),
+      previous: Timestamp.fromMillis(Date.now() - 14 * 24 * 60 * 60 * 1000 - 60_000),
+    });
+  });
+  await assertSucceeds(changeHandle('alice', 'alice_four'));
+  await assertFails(changeHandle('alice', 'alice_five'));
+});
+test('profile and link validation, owner edits, and private quota reads are enforced', async () => {
+  await createProfile('alice', 'alice_one');
+  const own = environment.authenticatedContext('alice').firestore();
+  const stranger = environment.authenticatedContext('bob').firestore();
+  const anon = environment.unauthenticatedContext().firestore();
+  await assertSucceeds(getDoc(doc(anon, 'profiles/alice')));
+  await assertSucceeds(getDoc(doc(anon, 'handles/alice_one')));
+  await assertFails(getDocs(collection(anon, 'profiles')));
+  await assertFails(getDoc(doc(stranger, 'profileLimits/alice')));
+  await assertFails(updateDoc(doc(stranger, 'profiles/alice'), { name: '위조', updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(own, 'profiles/alice'), { bio: '가'.repeat(1000), links: ['https://social.example.com/me'], updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(own, 'profiles/alice'), { bio: '가'.repeat(1001), updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(own, 'profiles/alice'), { links: ['javascript:alert(1)'], updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(own, 'profiles/alice'), { links: ['https://user:pass@example.com'], updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(own, 'profiles/alice'), { links: Array.from({length:6},(_,i)=>`https://example.com/${i}`), updatedAt: serverTimestamp() }));
+  await assertFails(changeHandle('alice', 'UPPERCASE'));
+  await assertFails(changeHandle('alice', 'x'));
+});

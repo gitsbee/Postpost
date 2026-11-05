@@ -4,7 +4,7 @@ import { auth } from '../firebase';
 import { validateAccount } from '../validation.mjs';
 import { errorMessage } from '../model';
 
-export default function AccountForm({ onClose }: { onClose: () => void }) {
+export default function AccountForm({ onClose, embedded = false }: { onClose: () => void; embedded?: boolean }) {
   const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
   const [name, setName] = useState(''); const [busy, setBusy] = useState(false);
@@ -35,10 +35,10 @@ export default function AccountForm({ onClose }: { onClose: () => void }) {
     catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
   return <section className="panel account" aria-labelledby="account-title">
-    <div className="section-heading"><h2 id="account-title">{mode === 'signup' ? '회원가입' : mode === 'reset' ? '비밀번호 재설정' : '로그인'}</h2><button type="button" onClick={onClose} disabled={busy}>닫기</button></div>
+    <div className="section-heading"><h2 id="account-title">{mode === 'signup' ? '회원가입' : mode === 'reset' ? '비밀번호 재설정' : '로그인'}</h2>{!embedded && <button type="button" onClick={onClose} disabled={busy}>닫기</button>}</div>
     <form onSubmit={submit}>
-      {mode === 'signup' && <label>닉네임<input autoFocus value={name} onChange={e => setName(e.target.value)} maxLength={30} autoComplete="nickname" required disabled={busy} /></label>}
-      <label>이메일<input autoFocus={mode !== 'signup'} type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required disabled={busy} /></label>
+      {mode === 'signup' && <label>닉네임<input autoFocus={!embedded} value={name} onChange={e => setName(e.target.value)} maxLength={30} autoComplete="nickname" required disabled={busy} /></label>}
+      <label>이메일<input autoFocus={!embedded && mode !== 'signup'} type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required disabled={busy} /></label>
       {mode !== 'reset' && <><label htmlFor="account-password">비밀번호</label><input id="account-password" type="password" value={password} onChange={e => setPassword(e.target.value)} minLength={mode === 'signup' ? 8 : undefined} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required disabled={busy} aria-describedby={mode === 'signup' ? 'password-help' : undefined} />{mode === 'signup' && <p id="password-help" className="muted">8자 이상 입력해 주세요.</p>}</>}
       {error && <p className="error" role="alert">{error}</p>}{notice && <p className="notice" role="status">{notice}</p>}
       {mode === 'signup' && notice ? <button type="button" className="primary" onClick={retryName} disabled={busy}>닉네임 다시 저장</button> : <button className="primary" disabled={busy}>{busy ? '처리 중…' : mode === 'signup' ? '가입하기' : mode === 'reset' ? '재설정 메일 받기' : '로그인'}</button>}

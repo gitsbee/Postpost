@@ -7,7 +7,7 @@ import { extractTags } from '../content.mjs';
 import { errorMessage } from '../model';
 
 type Draft = { body: string; id: string | null };
-export default function Composer({ user, onBusy }: { user: User; onBusy: (value: boolean) => void }) {
+export default function Composer({ user, onBusy, alwaysExpanded = false }: { user: User; onBusy: (value: boolean) => void; alwaysExpanded?: boolean }) {
   const key = `postpost:draft:${user.uid}`;
   const initial = useRef<Draft | null>(null);
   if (!initial.current) {
@@ -51,9 +51,9 @@ export default function Composer({ user, onBusy }: { user: User; onBusy: (value:
     } catch (e) { setError(errorMessage(e)); }
     finally { clearTimeout(timer); setSlow(false); setBusy(false); onBusy(false); }
   }
-  if (!expanded) return <section className="panel composer" aria-label="새 글 작성"><div className="section-heading"><h2>나의 이야기</h2><button className="primary" onClick={() => setExpanded(true)}>새 글 쓰기</button></div>{body && <p className="muted">작성 중인 초안이 있어요.</p>}<p className="notice" role="status">{notice}</p></section>;
+  if (!expanded && !alwaysExpanded) return <section className="panel composer" aria-label="새 글 작성"><div className="section-heading"><h2>나의 이야기</h2><button className="primary" onClick={() => setExpanded(true)}>새 글 쓰기</button></div>{body && <p className="muted">작성 중인 초안이 있어요.</p>}<p className="notice" role="status">{notice}</p></section>;
   return <section className="panel composer" aria-labelledby="composer-title">
-    <div className="section-heading"><h2 id="composer-title">글 쓰기</h2><button type="button" disabled={busy} onClick={() => setExpanded(false)}>접기</button></div>
+    <div className="section-heading"><h2 id="composer-title">글 쓰기</h2>{!alwaysExpanded && <button type="button" disabled={busy} onClick={() => setExpanded(false)}>접기</button>}</div>
     <form onSubmit={submit}>
       <label className="sr-only" htmlFor="body">게시할 글</label><textarea id="body" value={body} onChange={e => { id.current = null; setBody(e.target.value); setNotice(''); }} placeholder="무슨 생각을 하고 있나요? #태그도 남겨보세요." maxLength={MAX_POST_LENGTH} required disabled={busy} />
       <div className="composer-footer"><span className="muted">{body.length.toLocaleString()} / {MAX_POST_LENGTH.toLocaleString()}</span><div className="actions"><button type="button" disabled={busy || !body} onClick={() => { if (confirm('저장된 초안을 지울까요?')) { id.current = null; setBody(''); setNotice(''); } }}>초안 지우기</button><button className="primary" disabled={busy || !body.trim()}>{busy ? '게시 확인 중…' : '게시하기'}</button></div></div>

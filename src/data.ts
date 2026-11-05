@@ -31,7 +31,10 @@ export async function repost(original: Post, user: User) {
     const existing = await transaction.get(ref);
     const parent = await transaction.get(doc(db!, 'posts', original.id));
     if (!parent.exists() || parent.data().deleted) throw new Error('Deleted original');
-    if (existing.exists() && !existing.data().deleted) return;
+    if (existing.exists() && !existing.data().deleted) {
+      transaction.update(ref, { body: '', tags: [], deleted: true, updatedAt: serverTimestamp() });
+      return;
+    }
     const data = { body: '', tags: [], authorId: user.uid, authorName: user.displayName?.trim().slice(0, 30) || '작성자', createdAt: serverTimestamp(), kind: 'repost', originalId: original.id, deleted: false };
     if (existing.exists()) transaction.update(ref, { deleted: false, createdAt: serverTimestamp() });
     else transaction.set(ref, data);
