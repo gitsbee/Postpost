@@ -131,7 +131,7 @@ export default function App() {
   }
 
   return <>
-    <header className="header"><a className="wordmark" href="/" aria-label="Postpost 홈">postpost<span className="brand-dot">.</span><span className="beta">BETA</span></a>
+    <header className="header"><a className="wordmark" href={import.meta.env.BASE_URL} aria-label="Postpost 홈">postpost<span className="brand-dot">.</span><span className="beta">BETA</span></a>
       <nav aria-label="계정">{authLoading ? <span className="muted">연결 중…</span> : user ? <><span className="user-name">{user.displayName || '작성자'} 님</span><button className="small-button" onClick={logout} disabled={posting}>로그아웃</button></> : <button className="small-button" disabled={!auth} onClick={() => setAccountOpen(!accountOpen)}>로그인 / 가입</button>}</nav>
     </header>
     <main>

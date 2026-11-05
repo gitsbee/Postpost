@@ -64,22 +64,32 @@ npm run test:rules
 
 베타 범위에는 이메일 인증 필수화, 비밀번호 재설정 UI, 게시 빈도 제한, 신고·관리 기능이 없습니다. 공개 서비스로 확대할 때 Firebase App Check, 예산 알림과 악용 방지 기능을 별도로 설정하세요.
 
-## 규칙 및 Hosting 배포
+## GitHub Pages 배포
 
-Firebase CLI 로그인은 본인 환경에서 진행합니다. 아래 명령의 `YOUR_PROJECT_ID`를 실제 프로젝트 ID로 바꾸세요. 배포할 때도 네 가지 환경 변수가 필요합니다. Vite는 실행 시가 아닌 **빌드 시** 환경 변수를 번들에 반영합니다.
+배포 주소는 `https://gitsbee.github.io/Postpost/`입니다. Vite의 `base`와 홈 링크는 `/Postpost/` 경로를 사용합니다. 로컬 개발·미리보기도 서버 주소 뒤에 `/Postpost/`를 붙여 접속하세요.
+
+1. 저장소 **Settings → Pages → Build and deployment → Source**를 **GitHub Actions**로 설정합니다.
+2. **Settings → Secrets and variables → Actions**에서 위 네 가지 `VITE_FIREBASE_*` 값을 같은 이름으로 등록합니다. Repository secrets와 variables를 모두 지원하고, 같은 이름이면 secret을 우선합니다. 클라우드 환경 설정 값은 Actions로 자동 전달되지 않습니다.
+3. Firebase Authentication의 **Authorized domains**에 `gitsbee.github.io`를 등록합니다. Firebase의 `authDomain` 값은 웹 앱 설정의 원래 값을 유지합니다.
+4. `github-pages` 환경에 배포 브랜치 제한이 있다면 `beta`를 허용합니다.
+5. 변경 사항을 `beta`에 push하면 `.github/workflows/deploy-pages.yml`이 설치 → 테스트 → 빌드 → Pages 배포를 수행합니다. Actions에서 수동 실행할 때도 `beta`를 선택해야 합니다. 다른 브랜치에서는 배포 작업을 건너뜁니다. 워크플로가 기본 브랜치에도 있어야 GitHub UI의 수동 실행 버튼이 표시될 수 있습니다.
+
+워크플로는 Node.js 24에서 `npm ci`, `npm test`, 환경 변수 존재 검사, `npm run build`를 실행하고 `dist`만 Pages 아티팩트로 업로드합니다. 필수 변수가 비어 있으면 값은 출력하지 않고 빌드를 중단합니다. Pages 배포 권한은 배포 작업에만 부여합니다. Vite는 **빌드 시** 환경 변수를 번들에 반영하므로 값을 변경한 뒤에는 다시 빌드·배포해야 합니다.
+
+## Firestore 보안 규칙 게시
+
+GitHub Pages 워크플로는 Firestore 규칙을 배포하지 않습니다. Firebase 콘솔의 Rules 편집기에서 `firestore.rules`를 직접 게시하거나 본인 환경에서 다음 명령을 사용하세요. `YOUR_PROJECT_ID`는 실제 프로젝트 ID로 바꿉니다.
 
 ```sh
 npx firebase-tools login
 npx firebase-tools deploy --only firestore:rules --project YOUR_PROJECT_ID
-npm run build
-npx firebase-tools deploy --only hosting --project YOUR_PROJECT_ID
 ```
 
-프로젝트 ID와 인증 정보는 저장소에 고정하지 않았습니다. Firebase 콘솔의 Rules 편집기에서 `firestore.rules`를 직접 게시할 수도 있습니다. 저장소의 `firebase.json`에는 SPA Hosting 설정이 포함되어 있습니다.
+Firebase 서비스 계정이나 배포 토큰은 GitHub Pages 배포에 필요하지 않습니다. 저장소의 `firebase.json`에 남아 있는 Firebase Hosting 설정은 GitHub Pages에는 적용되지 않습니다.
 
 ## 연결 후 기능 확인
 
-실제 Firebase 프로젝트 연결 및 규칙 배포 후 다음을 확인하세요. 키가 없는 상태의 빌드와 입력 검증 테스트만으로 Firebase 연동 성공을 판단할 수 없습니다.
+Actions의 빌드·배포 성공 후 Pages 주소에서 화면과 CSS가 표시되는지, 로고 클릭과 새로고침 후에도 `/Postpost/`에 머무는지 확인하세요. 실제 Firebase 프로젝트 연결 및 규칙 배포 후 다음을 확인하세요. 키가 없는 상태의 빌드와 입력 검증 테스트만으로 Firebase 연동 성공을 판단할 수 없습니다.
 
 1. 새 이메일로 가입하고 닉네임이 표시되는지 확인합니다.
 2. 글을 게시하고 새로고침 후에도 로그인 상태와 글이 유지되는지 확인합니다.
