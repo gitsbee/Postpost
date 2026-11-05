@@ -14,11 +14,7 @@
     "ui": {
       "enabled": false
     },
-    "singleProjectMode": true,
-    "functions": {
-      "host": "127.0.0.1",
-      "port": 5001
-    }
+    "singleProjectMode": true
   },
   "hosting": {
     "public": "dist",
@@ -53,17 +49,5 @@
         ]
       }
     ]
-  },
-  "functions": [
-    {
-      "source": "functions",
-      "codebase": "default",
-      "ignore": [
-        "node_modules",
-        ".env*",
-        "test",
-        "*.log"
-      ]
-    }
-  ]
+  }
 }

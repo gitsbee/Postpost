@@ -27,16 +27,11 @@ jobs:
           distribution: temurin
           java-version: '21'
       - run: npm ci
-      - run: npm --prefix functions ci
-      - name: Verify handle-login service
-        run: npm run test:functions
       - name: Install test browser
         run: npx playwright install --with-deps chromium
       - name: Verify Firestore permissions with demo data
         run: npm run test:rules
       - name: Verify browser flows with demo services
-        env:
-          AUTH_WEB_API_KEY: demo-public-key
         run: npm run test:e2e
 
   build:

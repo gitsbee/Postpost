@@ -1,7 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Only the trusted login function can read/write throttle records.
+    // Retired login-service records, if any, remain inaccessible to clients.
     match /loginAttempts/{id} { allow read, write: if false; }
     match /users/{uid}/activity/{activityId} {
       function own() { return request.auth != null && request.auth.uid == uid; }

@@ -111,7 +111,7 @@ test('desktop navigation, private reactions, activity, exploration, inline searc
   } finally { await first.close(); await second.close(); }
 });
 
-test('mobile two-step signup, handle login, back navigation and persistent dark mode', async ({ page }) => {
+test('mobile two-step signup, email-only login, back navigation and persistent dark mode', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const email = await signup(page, 'phone');
   const nav = page.getByRole('navigation', { name: '주 메뉴' });
@@ -130,11 +130,17 @@ test('mobile two-step signup, handle login, back navigation and persistent dark 
   await page.getByRole('button', { name: '이전 화면으로', exact: true }).click();
   await expect(page.getByRole('heading', { name: '탐색', exact: true })).toBeVisible();
   await nav.getByRole('button', { name: '마이페이지', exact: true }).click();
-  await page.getByLabel('이메일 또는 핸들', { exact: true }).fill('@phone');
+  await page.getByLabel('이메일', { exact: true }).fill('@phone');
+  expect(await page.getByLabel('이메일', { exact: true }).evaluate(el => (el as HTMLInputElement).checkValidity())).toBeFalsy();
+  await page.getByLabel('이메일', { exact: true }).fill(email);
   await page.getByLabel('비밀번호', { exact: true }).fill('wrong-password');
   await page.getByRole('button', { name: '로그인', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('이메일 또는 핸들과 비밀번호');
+  await expect(page.getByRole('alert')).toContainText('이메일 또는 비밀번호');
   expect(await page.locator('body').innerText()).not.toContain(email);
+  await page.getByRole('button', { name: '비밀번호를 잊었나요?', exact: true }).click();
+  await page.getByRole('button', { name: '재설정 메일 받기', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('재설정 메일');
+  await page.getByRole('button', { name: '이전 화면으로', exact: true }).click();
   await page.getByLabel('비밀번호', { exact: true }).fill(password);
   await page.getByRole('button', { name: '로그인', exact: true }).click();
   await expect(page.getByRole('heading', { name: '프로필', exact: true, level: 1 })).toBeVisible();

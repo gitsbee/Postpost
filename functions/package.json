@@ -1,9 +1,0 @@
-{
-  "name": "postpost-functions",
-  "private": true,
-  "type": "module",
-  "main": "index.mjs",
-  "engines": { "node": "22" },
-  "scripts": { "test": "node --test test/*.test.mjs" },
-  "dependencies": { "firebase-admin": "^13.6.0", "firebase-functions": "^7.0.0" }
-}

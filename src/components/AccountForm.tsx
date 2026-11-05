@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword, updateProfile, type User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { auth, db, functions } from '../firebase';
+import { auth, db } from '../firebase';
 import { validateAccount } from '../validation.mjs';
 import { normalizeHandle, validateProfile } from '../profileValidation.mjs';
 import { saveProfile } from '../profiles';
@@ -29,8 +28,9 @@ export default function AccountForm({ onClose, onSuccess, onPending }: { onClose
       const invalid = validateProfile(name, handle, '', []); if (invalid) { setError(invalid); return; }
     } else if (mode === 'reset') {
       const invalid = validateAccount(email, 'reset', '', false); if (invalid) { setError(invalid); return; }
-    } else if ((!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && !/^[a-z][a-z0-9_]{2,19}$/.test(normalizeHandle(email))) || !password) {
-      setError('이메일 주소 또는 핸들과 비밀번호를 입력해 주세요.'); return;
+    } else {
+      const invalid = validateAccount(email, password, '', false);
+      if (invalid) { setError(invalid); return; }
     }
     setBusy(true);
     try {
@@ -47,20 +47,11 @@ export default function AccountForm({ onClose, onSuccess, onPending }: { onClose
         try { await updateProfile(created.current, { displayName: name.trim() }); } catch { /* Public profile is already saved; Auth display name is only a fallback. */ }
         onPending(false); onSuccess();
       } else {
-        let loginEmail = email.trim();
-        if (!loginEmail.includes('@') || loginEmail.startsWith('@')) {
-          if (!functions) { setError('핸들 로그인을 사용할 수 없습니다. 이메일로 로그인해 주세요.'); return; }
-          const resolve = httpsCallable<{ handle: string; password: string }, { email: string }>(functions, 'resolveHandleLogin');
-          const result = await resolve({ handle: normalizeHandle(loginEmail), password }); loginEmail = result.data.email;
-        }
-        await signInWithEmailAndPassword(auth, loginEmail, password); onSuccess();
+        await signInWithEmailAndPassword(auth, email.trim(), password); onSuccess();
       }
     } catch (error) {
       const code = (error as { code?: string }).code;
       if (mode === 'signup' && created.current) setError('계정은 생성됐지만 프로필 등록을 완료하지 못했어요. 핸들을 확인한 뒤 다시 가입 완료를 눌러 주세요.');
-      else if (code === 'functions/unauthenticated') setError('이메일 또는 핸들과 비밀번호를 확인해 주세요.');
-      else if (code === 'functions/resource-exhausted') setError('로그인 요청이 많아요. 잠시 후 다시 시도해 주세요.');
-      else if (code?.startsWith('functions/')) setError('핸들 로그인 서버에 연결하지 못했어요. 이메일로 로그인하거나 잠시 후 다시 시도해 주세요.');
       else setError(code ? errorMessage(error) : error instanceof Error ? error.message : '처리하지 못했어요.');
       if (!created.current) onPending(false);
     } finally { setBusy(false); }
@@ -70,7 +61,7 @@ export default function AccountForm({ onClose, onSuccess, onPending }: { onClose
     <div className="page-heading"><button type="button" className="icon-button" onClick={back} disabled={busy} aria-label="이전 화면으로"><Icon name="back" /></button><h1 id="account-title">{title}</h1></div>
     <form onSubmit={submit} autoComplete="on">
       <fieldset className="credentials-fields">
-        <label htmlFor="account-username">{mode === 'login' ? '이메일 또는 핸들' : mode === 'signup' && step === 1 ? '가입 이메일' : '이메일'}</label><input id="account-username" name="username" type={mode === 'login' ? 'text' : 'email'} value={email} onChange={event => setEmail(event.target.value)} autoComplete="username" readOnly={busy || Boolean(created.current) || mode === 'signup' && step === 1} autoCapitalize="none" autoCorrect="off" spellCheck={false} required autoFocus />
+        <label htmlFor="account-username">{mode === 'signup' && step === 1 ? '가입 이메일' : '이메일'}</label><input id="account-username" name="username" type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="username" readOnly={busy || Boolean(created.current) || mode === 'signup' && step === 1} autoCapitalize="none" autoCorrect="off" spellCheck={false} required autoFocus />
         {mode !== 'reset' && <div hidden={mode === 'signup' && step === 1}><label htmlFor="account-password">비밀번호</label><input id="account-password" name="password" readOnly={busy || Boolean(created.current)} type="password" value={password} onChange={event => setPassword(event.target.value)} minLength={mode === 'signup' ? 8 : undefined} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required />{mode === 'signup' && <p className="muted">8자 이상 입력해 주세요.</p>}</div>}
       </fieldset>
       {mode === 'signup' && step === 1 && <fieldset disabled={busy}><p className="muted">2 / 2 · 고유 핸들과 이름을 정해 주세요.</p><label htmlFor="signup-handle">핸들</label><div className="handle-input"><span aria-hidden="true">@</span><input id="signup-handle" name="publicHandle" autoComplete="off" autoFocus value={handle} onChange={event => setHandle(event.target.value.toLowerCase())} maxLength={20} required /></div><p className="muted">영문자로 시작하는 소문자·숫자·밑줄 3~20자</p><label htmlFor="signup-name">닉네임</label><input id="signup-name" name="displayName" autoComplete="off" value={name} onChange={event => setName(event.target.value)} maxLength={30} required /></fieldset>}
