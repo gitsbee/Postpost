@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f5f3ee" />
     <meta name="description" content="짧은 생각을 남기고 함께 읽는 공간, Postpost." />
-    <script>try { const t = localStorage.getItem('postpost:theme'); const dark = t === 'dark' || ((!t || t === 'system') && matchMedia('(prefers-color-scheme: dark)').matches); document.documentElement.dataset.theme = dark ? 'dark' : 'light'; document.documentElement.style.colorScheme = dark ? 'dark' : 'light'; } catch {}</script>
+    <script>try { const t = localStorage.getItem('postpost:theme'); const dark = t === 'dark' || ((!t || t === 'system') && matchMedia('(prefers-color-scheme: dark)').matches); document.documentElement.dataset.theme = dark ? 'dark' : 'light'; document.documentElement.style.colorScheme = dark ? 'dark' : 'light'; document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#000000' : '#f5f3ee'); } catch {}</script>
     <title>Postpost · 생각을 남기는 곳</title>
   </head>
   <body>

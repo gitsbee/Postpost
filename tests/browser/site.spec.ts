@@ -46,6 +46,8 @@ test('desktop navigation, private reactions, activity, exploration, inline searc
     const original = author.getByRole('article', { name: 'writer의 글', exact: true });
     await expect(original.getByText('@writer', { exact: true })).toBeVisible();
     expect(await original.locator('.post-body').evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeCloseTo(18.6667, 1);
+    expect(await author.getByRole('navigation', { name: '주 메뉴' }).getByRole('button').allTextContents()).toEqual(['', '', '', '', '']);
+    await expect(author.getByRole('button', { name: '더보기', exact: true })).toHaveText('');
     await author.screenshot({ path: 'test-results/feed-desktop.png', fullPage: true });
     await signup(reader, 'reader');
     const foreign = reader.getByRole('article', { name: 'writer의 글', exact: true });
@@ -150,12 +152,18 @@ test('mobile two-step signup, email-only login, back navigation and persistent d
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  expect(await nav.getByRole('button').allTextContents()).toEqual(['', '', '', '', '']);
+  expect(await page.locator('html').evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgb(0, 0, 0)');
+  expect(await page.locator('html').evaluate(el => getComputedStyle(el).color)).toBe('rgb(255, 255, 255)');
+  expect(await page.locator('.bottom-navigation').evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgb(0, 0, 0)');
   await nav.getByRole('button', { name: '검색', exact: true }).click();
   await expect(page.getByRole('searchbox', { name: '검색어' })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('searchbox', { name: '검색어' }).fill('@phone');
   await expect(page.getByRole('article').filter({ hasText: '모바일 글 #테스트' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  expect(await page.locator('.post-body').first().evaluate(el => getComputedStyle(el).color)).toBe('rgb(255, 255, 255)');
+  expect(await page.locator('.post').first().evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgb(0, 0, 0)');
   await page.screenshot({ path: 'test-results/search-dark-mobile.png', fullPage: true });
   await nav.getByRole('button', { name: '피드', exact: true }).click();
   await page.screenshot({ path: 'test-results/feed-dark-mobile.png', fullPage: true });

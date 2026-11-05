@@ -57,7 +57,7 @@ export default function App() {
   return <>
     <a className="skip-link" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>본문으로 건너뛰기</a>
     <Navigation desktop={desktop} selected={selected} user={user} onCompose={compose} onLogout={logout} />
-    {!desktop && <header className="mobile-topbar"><a href={base} aria-label="포스트포스트 홈"><Icon name="post" /><span>포스트포스트</span></a><a className="icon-button" href={`${base}#/settings`} aria-label="설정"><Icon name={theme === 'dark' ? 'moon' : 'settings'} /></a></header>}
+    {!desktop && <header className="mobile-topbar"><a href={base} aria-label="포스트포스트 홈"><Icon name="post" /></a><a className="icon-button" href={`${base}#/settings`} aria-label="설정"><Icon name={theme === 'dark' ? 'moon' : 'settings'} /></a></header>}
     <main id="main" tabIndex={-1} className={`application-main${desktop ? ' desktop-main' : ''}`}>
       {error && <p className="error" role="alert">{error}</p>}
       {route.about ? <><PageHeading title="소개" back /><About /></> : route.settings ? <><PageHeading title="설정" back /><section className="panel settings-panel"><h2>화면 모드</h2><fieldset className="theme-options"><legend className="sr-only">화면 모드 선택</legend>{(['system', 'light', 'dark'] as const).map(value => <label className="theme-choice" key={value}><input type="radio" name="theme" value={value} checked={theme === value} onChange={() => setTheme(value)} />{value === 'system' ? '기기 설정에 맞추기' : value === 'light' ? '라이트 모드' : '다크 모드'}<Icon name={value === 'dark' ? 'moon' : value === 'light' ? 'sun' : 'settings'} /></label>)}</fieldset><a href={`${base}#/me`}>프로필 관리</a></section></> : route.me ? <>

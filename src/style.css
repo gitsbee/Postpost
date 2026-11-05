@@ -36,41 +36,41 @@
   --c-87957a: #87957a;
 }
 :root[data-theme="dark"] {
-  --c-f5f3ee: #151b17;
-  --c-fffefb: #1d251e;
-  --c-283526: #e1e9d9;
-  --c-35472d: #cadabf;
-  --c-a7b19b: #617457;
-  --c-edf0e6: #293629;
-  --c-68715f: #b0bca4;
-  --c-59674f: #b0bca4;
-  --c-e8eae1: #29352a;
-  --c-425b36: #b4d496;
-  --c-32482a: #c3e4a7;
-  --c-526c3b: #b4d496;
-  --c-d9dece: #3a493a;
-  --c-354c2b: #bedda8;
-  --c-59674e: #b0bca4;
-  --c-dce1d3: #354536;
-  --c-626e59: #a8b59c;
-  --c-a2ad97: #667c5b;
-  --c-87977a: #879f75;
-  --c-e9eddf: #2a3b28;
-  --c-536447: #b5c6a8;
-  --c-edf0e5: #2a3b28;
-  --c-4f6740: #bddaa7;
-  --c-e1e5d9: #3a493a;
-  --c-596b4d: #b3c7a2;
-  --c-34532a: #c3e1ac;
-  --c-eaf0e0: #2c4029;
-  --c-c5cebb: #52654a;
-  --c-91372b: #f5b4aa;
-  --c-8d9e7b: #839e6e;
-  --c-842b22: #f5b4aa;
-  --c-fff0e9: #422c29;
-  --c-923125: #e4a294;
-  --c-354f2d: #bbdaa5;
-  --c-87957a: #879f75;
+  --c-f5f3ee: #000000;
+  --c-fffefb: #000000;
+  --c-283526: #FFFFFF;
+  --c-35472d: #FFFFFF;
+  --c-a7b19b: #454545;
+  --c-edf0e6: #151515;
+  --c-68715f: #AAAAAA;
+  --c-59674f: #999999;
+  --c-e8eae1: #151515;
+  --c-425b36: #000000;
+  --c-32482a: #151515;
+  --c-526c3b: #83B46B;
+  --c-d9dece: #303030;
+  --c-354c2b: #FFFFFF;
+  --c-59674e: #CCCCCC;
+  --c-dce1d3: #303030;
+  --c-626e59: #BDBDBD;
+  --c-a2ad97: #666666;
+  --c-87977a: #83B46B;
+  --c-e9eddf: #151515;
+  --c-536447: #FFFFFF;
+  --c-edf0e5: #151515;
+  --c-4f6740: #CCCCCC;
+  --c-e1e5d9: #303030;
+  --c-596b4d: #CCCCCC;
+  --c-34532a: #FFFFFF;
+  --c-eaf0e0: #151515;
+  --c-c5cebb: #454545;
+  --c-91372b: #FFB4AA;
+  --c-8d9e7b: #83B46B;
+  --c-842b22: #FFB4AA;
+  --c-fff0e9: #241414;
+  --c-923125: #FFB4AA;
+  --c-354f2d: #FFFFFF;
+  --c-87957a: #83B46B;
 }
 :root {
   font-family: system-ui, -apple-system, 'Noto Sans KR', sans-serif;
@@ -312,7 +312,7 @@ dialog .section-heading { margin-bottom: 18px; }
 @media(max-width:959px) { .application-main { padding: 22px 14px calc(100px + env(safe-area-inset-bottom)); } }
 @media(prefers-reduced-motion:reduce) { .expanding-search { animation: none; } }
 :root { --c-link: #38532f; }
-:root[data-theme="dark"] { --c-link: #bedda8; }
+:root[data-theme="dark"] { --c-link: #FFFFFF; }
 a { color: var(--c-link); }
 .post-menu summary.icon-button { display: flex; align-items: center; justify-content: center; }
 .rail-bottom .post-menu summary.icon-button { justify-content: flex-start; }
@@ -321,3 +321,20 @@ a { color: var(--c-link); }
 @media(max-width:959px) { .application-main { min-height: calc(100dvh - 61px); } }
 
 .skip-link { z-index: 100; }
+
+/* Navigation is icon-only in both layouts. */
+.navigation-rail { width: 88px; padding: 24px 12px; align-items: center; }
+.navigation-rail nav { width: 100%; align-items: center; }
+.navigation-rail .nav-item { width: 52px; height: 52px; justify-content: center; padding: 12px; gap: 0; }
+.navigation-rail .brand-symbol { align-self: center; padding: 8px; }
+.rail-bottom { width: 52px; }
+.rail-bottom .post-menu summary.icon-button { width: 52px; height: 52px; padding: 12px; justify-content: center; }
+.bottom-navigation .nav-item { min-height: 48px; padding: 10px; gap: 0; }
+:root[data-theme="dark"] .primary { color: #FFFFFF; border-color: #83B46B; }
+:root[data-theme="dark"] .nav-item .icon,
+:root[data-theme="dark"] .brand-symbol .icon { color: #83B46B; }
+:root[data-theme="dark"] .theme-choice input { accent-color: #FFFFFF; }
+@media(min-width:960px) { body { padding-left: 88px; } }
+:root[data-theme="dark"] dialog::backdrop { background: rgb(0 0 0 / .8); }
+:root[data-theme="dark"] dialog,
+:root[data-theme="dark"] .post-menu-options { box-shadow: 0 12px 36px rgb(0 0 0 / .5); }
