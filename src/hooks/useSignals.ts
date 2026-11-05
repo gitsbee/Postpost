@@ -33,17 +33,18 @@ export function useActivity(posts: Post[], uid: string | undefined, enabled: boo
       for (const item of snapshot.docs) {
         const value = item.data();
         if (typeof value.postId !== 'string' || value.postId.includes('/') || !['like', 'dislike', 'repost'].includes(value.kind)) { if (--pending === 0) setLoading(false); continue; }
-        let post: Post | null = null; let validSource = false; let postLoaded = false; let sourceLoaded = false; let counted = false;
+        let post: Post | null = null; let sharedPost: Post | null = null; let validSource = false; let postLoaded = false; let sourceLoaded = false; let counted = false;
         const publish = () => {
           if (!alive || generation !== attempt) return;
-          if (post && !post.deleted && validSource) resolved.set(item.id, { id: post.id, post, kind: value.kind }); else resolved.delete(item.id);
+          const visible = value.kind === 'repost' ? sharedPost : post;
+          if (visible && !visible.deleted && validSource) resolved.set(item.id, { id: value.postId, post: visible, kind: value.kind }); else resolved.delete(item.id);
           setStored(snapshot.docs.flatMap(doc => resolved.has(doc.id) ? [resolved.get(doc.id)!] : []));
           if (postLoaded && sourceLoaded && !counted) { counted = true; if (--pending === 0) setLoading(false); }
         };
         const failed = () => { if (alive && generation === attempt) { setError('활동을 불러오지 못했어요. 연결과 최신 규칙을 확인해 주세요.'); setLoading(false); } };
         activityStops.push(onSnapshot(doc(db!, 'posts', value.postId), current => { post = readPost(current); postLoaded = true; publish(); }, failed));
         const source = value.kind === 'repost' ? doc(db!, 'posts', `repost_${uid}_${value.postId}`) : doc(db!, 'posts', value.postId, 'reactions', uid);
-        activityStops.push(onSnapshot(source, current => { validSource = current.exists() && (value.kind === 'repost' ? !current.data().deleted : current.data().kind === value.kind); sourceLoaded = true; publish(); }, failed));
+        activityStops.push(onSnapshot(source, current => { if (value.kind === 'repost') sharedPost = readPost(current); validSource = current.exists() && (value.kind === 'repost' ? !current.data().deleted : current.data().kind === value.kind); sourceLoaded = true; publish(); }, failed));
       }
     }, () => { setError('활동을 불러오지 못했어요. 최신 규칙을 확인해 주세요.'); setLoading(false); });
     return () => { alive = false; activityStops.forEach(stop => stop()); stops.forEach(stop => stop()); stopActivity(); };

@@ -338,3 +338,19 @@ a { color: var(--c-link); }
 :root[data-theme="dark"] dialog::backdrop { background: rgb(0 0 0 / .8); }
 :root[data-theme="dark"] dialog,
 :root[data-theme="dark"] .post-menu-options { box-shadow: 0 12px 36px rgb(0 0 0 / .5); }
+
+.original-excerpt { font-size: 14pt; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.original-reference .identity { margin-top: 12px; }
+.reaction-actions { flex-wrap: wrap; min-width: 0; }
+.comments { border-top: 1px solid var(--c-d9dece); margin-top: 24px; padding-top: 20px; }
+.comments h3 { font-size: 16pt; margin: 0 0 18px; }
+.comment-input { min-height: 90px; }
+.comment-composer .composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.comment-composer .muted { font-size: 11pt; }
+.comment-list { margin-top: 22px; }
+.comment { border-top: 1px solid var(--c-e1e5d9); padding: 18px 0; }
+.comment-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.comment-heading .post-menu { flex-shrink: 0; }
+.comment-body { font-size: 14pt; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; margin: 12px 0 0; }
+.comment form { margin-top: 12px; }
+.comment-login { padding: 8px 0 18px; }

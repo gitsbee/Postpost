@@ -25,3 +25,13 @@ test('login accepts existing shorter passwords and requires no nickname', () => 
   assert.equal(validateAccount('user@example.com', '123456', '', false), null);
   assert.ok(validateAccount('user@example.com', '', '', false));
 });
+
+test('repost text is optional and comments reject whitespace with independent limits', async () => {
+  const { validateRepost, validateComment } = await import('../src/validation.mjs');
+  assert.equal(validateRepost(''), null);
+  assert.equal(validateRepost('가'.repeat(2000)), null);
+  assert.ok(validateRepost('가'.repeat(2001)));
+  assert.ok(validateComment(' \n\t'));
+  assert.equal(validateComment('가'.repeat(1000)), null);
+  assert.ok(validateComment('가'.repeat(1001)));
+});

@@ -14,3 +14,13 @@ export function validateAccount(email, password, name, signup) {
   if (signup && (!name.trim() || name.trim().length > 30)) return '닉네임은 1~30자로 입력해 주세요.';
   return null;
 }
+
+export const MAX_COMMENT_LENGTH = 1000;
+export function validateComment(body) {
+  if (!body.trim()) return '댓글 내용을 입력해 주세요.';
+  if (body.trim().length > MAX_COMMENT_LENGTH) return '댓글은 1,000자까지 작성할 수 있어요.';
+  return null;
+}
+export function validateRepost(body) {
+  return body.trim().length > MAX_POST_LENGTH ? '리포스트 글은 2,000자까지 작성할 수 있어요.' : null;
+}

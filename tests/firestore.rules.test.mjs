@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { before, after, beforeEach, test } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, setDoc, getDoc, updateDoc, deleteDoc, getDocs, collection, runTransaction, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, deleteDoc, getDocs, collection, increment, runTransaction, serverTimestamp, Timestamp } from 'firebase/firestore';
 
 let environment;
 before(async () => {
@@ -231,4 +231,80 @@ test('legacy reactions and reposts without activity records can still be cancell
     tx.update(ref, { body: '', tags: [], deleted: true, updatedAt: serverTimestamp() });
     tx.delete(doc(reader, 'users/reader/activity/repost_first'));
   }));
+});
+
+const quoteData = () => ({ body: '내 생각 #의견', tags: ['의견'], kind: 'repost', originalId: 'first', deleted: false, authorId: 'reader', authorName: '독자', createdAt: serverTimestamp() });
+test('quote reposts support text, edits and restore while preserving original identity', async () => {
+  await setDoc(doc(writer(), 'posts/first'), validPost());
+  const store = environment.authenticatedContext('reader').firestore();
+  const ref = doc(store, 'posts/repost_reader_first');
+  await assertSucceeds(setDoc(ref, quoteData()));
+  await assertSucceeds(updateDoc(ref, { body: '의견 수정', tags: [], updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { originalId: 'other', updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { body: '가'.repeat(2001), updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(writer(), 'posts/repost_reader_first'), { body: '타인 편집', updatedAt: serverTimestamp() }));
+  await updateDoc(ref, { body: '', tags: [], deleted: true, updatedAt: serverTimestamp() });
+  await assertSucceeds(updateDoc(ref, { body: '재리포스트 의견', tags: [], deleted: false, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }));
+  await updateDoc(doc(writer(), 'posts/first'), { body: '', tags: [], deleted: true, updatedAt: serverTimestamp() });
+  await assertSucceeds(updateDoc(ref, { body: '원문 삭제 후에도 내 의견은 편집 가능', tags: [], updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(environment.authenticatedContext('other').firestore(), 'posts/repost_other_first'), { ...quoteData(), authorId: 'other' }));
+});
+async function makeComment(uid, postId, commentId, body = '댓글 내용', extra = {}) {
+  const store = environment.authenticatedContext(uid).firestore();
+  const ref = doc(store, 'posts', postId, 'comments', commentId); const stats = doc(store, 'posts', postId, 'stats', 'comments');
+  return runTransaction(store, async tx => {
+    await tx.get(ref);
+    tx.set(ref, { body, authorId: uid, authorName: uid, createdAt: serverTimestamp(), deleted: false, ...extra });
+    tx.set(stats, { count: increment(1), lastCommentId: commentId }, { merge: true });
+  });
+}
+test('comments are public on live posts, support multiple writers and accurate counts', async () => {
+  await setDoc(doc(writer(), 'posts/first'), validPost());
+  await assertSucceeds(Promise.all([makeComment('reader', 'first', 'one'), makeComment('other', 'first', 'two')]));
+  const anon = environment.unauthenticatedContext().firestore();
+  await assertSucceeds(getDocs(collection(anon, 'posts/first/comments')));
+  const counts = await getDoc(doc(anon, 'posts/first/stats/comments'));
+  if (counts.data().count !== 2) throw new Error('Wrong concurrent comment count');
+  await assertFails(setDoc(doc(anon, 'posts/first/comments/anonymous'), { body: '익명 쓰기', authorId: 'reader', authorName: 'reader', deleted: false, createdAt: serverTimestamp() }));
+});
+test('comment count forgery, standalone creation and author impersonation are denied', async () => {
+  await setDoc(doc(writer(), 'posts/first'), validPost());
+  const store = environment.authenticatedContext('reader').firestore();
+  await assertFails(setDoc(doc(store, 'posts/first/comments/lone'), { body: '단독 쓰기', authorId: 'reader', authorName: 'reader', deleted: false, createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(store, 'posts/first/stats/comments'), { count: 99, lastCommentId: 'missing' }));
+  await assertFails(makeComment('reader', 'first', 'fake', '위조', { authorId: 'writer' }));
+  await assertFails(makeComment('reader', 'first', 'past', '과거 시각', { createdAt: Timestamp.fromMillis(0) }));
+  await assertFails(makeComment('reader', 'missing', 'orphan'));
+});
+test('comment limits, own edits and atomic content-erasing deletion are enforced', async () => {
+  await setDoc(doc(writer(), 'posts/first'), validPost());
+  await assertFails(makeComment('reader', 'first', 'blank', ' \n\t'));
+  await assertFails(makeComment('reader', 'first', 'long', '가'.repeat(1001)));
+  await assertSucceeds(makeComment('reader', 'first', 'one', '가'.repeat(1000)));
+  const store = environment.authenticatedContext('reader').firestore();
+  const ref = doc(store, 'posts/first/comments/one');
+  await assertSucceeds(updateDoc(ref, { body: '내 댓글 수정', updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { authorId: 'writer', updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(writer(), 'posts/first/comments/one'), { body: '타인 수정', updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { body: '', deleted: true, updatedAt: serverTimestamp() }));
+  await assertSucceeds(runTransaction(store, async tx => {
+    await tx.get(ref);
+    tx.update(ref, { body: '', deleted: true, updatedAt: serverTimestamp() });
+    tx.set(doc(store, 'posts/first/stats/comments'), { count: 0, lastCommentId: 'one' });
+  }));
+  await assertFails(updateDoc(ref, { body: '삭제 후 복원', deleted: false, updatedAt: serverTimestamp() }));
+  await assertFails(deleteDoc(ref));
+});
+test('original comments disappear after deletion; quote comments remain independent', async () => {
+  await setDoc(doc(writer(), 'posts/first'), validPost());
+  await setDoc(doc(environment.authenticatedContext('reader').firestore(), 'posts/repost_reader_first'), quoteData());
+  await makeComment('reader', 'first', 'original');
+  await makeComment('other', 'repost_reader_first', 'quote');
+  await updateDoc(doc(writer(), 'posts/first'), { body: '', tags: [], deleted: true, updatedAt: serverTimestamp() });
+  const anon = environment.unauthenticatedContext().firestore();
+  await assertFails(getDocs(collection(anon, 'posts/first/comments')));
+  await assertFails(getDoc(doc(anon, 'posts/first/comments/original')));
+  await assertFails(makeComment('reader', 'first', 'after-delete'));
+  await assertSucceeds(getDocs(collection(anon, 'posts/repost_reader_first/comments')));
+  await assertSucceeds(makeComment('other', 'repost_reader_first', 'independent'));
 });

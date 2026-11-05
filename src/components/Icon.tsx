@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 const paths = {
+  comment: <path d="M5 3h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9l-6 4V5a2 2 0 0 1 2-2Z" />,
   back: <path d="m14 5-7 7 7 7M7 12h14" />,
   home: <><path d="m3 11 9-8 9 8M5 10v11h5v-7h4v7h5V10" /></>,
   flame: <path d="M12 2c2 5-2 6 1 9 1-2 2-3 3-4 1 3 5 6 4 10a8 8 0 0 1-16-1c0-5 5-7 8-14Z" />,

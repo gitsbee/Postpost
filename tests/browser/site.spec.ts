@@ -32,6 +32,20 @@ async function menu(card: Locator, item: string) {
   await card.getByRole('button', { name: '게시물 메뉴', exact: true }).click();
   await card.getByRole('button', { name: item, exact: true }).click();
 }
+async function quote(page: Page, card: Locator, body = '') {
+  await card.getByRole('button', { name: /^리포스트 \d+$/ }).click();
+  const composer = page.getByRole('dialog', { name: /리포스트 (작성|수정)/ });
+  await composer.getByLabel('리포스트에 덧붙일 글', { exact: true }).fill(body);
+  await composer.getByRole('button', { name: /^(리포스트하기|리포스트 저장)$/ }).click();
+  await expect(composer).toHaveCount(0);
+}
+async function cancelQuote(page: Page, card: Locator) {
+  await card.getByRole('button', { name: /^리포스트 \d+$/ }).click();
+  const composer = page.getByRole('dialog', { name: '리포스트 수정', exact: true });
+  page.once('dialog', dialog => dialog.accept());
+  await composer.getByRole('button', { name: '리포스트 취소', exact: true }).click();
+  await expect(composer).toHaveCount(0);
+}
 test.beforeAll(async () => {
   const response = await fetch('http://127.0.0.1:8080/emulator/v1/projects/demo-postpost/databases/(default)/documents', { method: 'DELETE' });
   expect(response.ok).toBeTruthy();
@@ -61,13 +75,13 @@ test('desktop navigation, private reactions, activity, exploration, inline searc
     await author.getByRole('button', { name: '이전 화면으로', exact: true }).click();
     await expect(author.getByRole('heading', { name: '피드', exact: true, level: 1 })).toBeVisible();
 
-    await foreign.getByRole('button', { name: '리포스트 0', exact: true }).click();
+    await quote(reader, foreign);
     const shared = reader.getByRole('article', { name: 'reader의 리포스트', exact: true });
     await expect(shared).toBeVisible();
     await expect(original.getByRole('button', { name: '리포스트 1', exact: true })).toBeVisible();
-    await foreign.getByRole('button', { name: '리포스트 1', exact: true }).click();
+    await cancelQuote(reader, foreign);
     await expect(shared).toHaveCount(0);
-    await foreign.getByRole('button', { name: '리포스트 0', exact: true }).click();
+    await quote(reader, foreign);
     await expect(shared).toBeVisible();
     await shared.getByRole('link', { name: '원 포스트 보기', exact: true }).click();
     const detail = reader.getByRole('dialog', { name: '포스트 보기', exact: true });
@@ -167,4 +181,68 @@ test('mobile two-step signup, email-only login, back navigation and persistent d
   await page.screenshot({ path: 'test-results/search-dark-mobile.png', fullPage: true });
   await nav.getByRole('button', { name: '피드', exact: true }).click();
   await page.screenshot({ path: 'test-results/feed-dark-mobile.png', fullPage: true });
+});
+
+
+test('quote text and independent comment threads survive original deletion safely', async ({ browser }) => {
+  const ownerContext = await browser.newContext(); const readerContext = await browser.newContext(); const anonContext = await browser.newContext();
+  const owner = await ownerContext.newPage(); const reader = await readerContext.newPage(); const anon = await anonContext.newPage();
+  try {
+    await signup(owner, 'comment_writer'); await post(owner, '댓글 기능 원문');
+    await signup(reader, 'comment_reader');
+    const original = owner.getByRole('article', { name: 'comment_writer의 글', exact: true });
+    const foreign = reader.getByRole('article', { name: 'comment_writer의 글', exact: true });
+    await quote(reader, foreign, '리포스트에 덧붙인 생각 #의견');
+    const shared = reader.getByRole('article', { name: 'comment_reader의 리포스트', exact: true });
+    await expect(shared.getByText('리포스트에 덧붙인 생각 #의견', { exact: true })).toBeVisible();
+    await foreign.getByRole('button', { name: '댓글 0', exact: true }).click();
+    const readerDetail = reader.getByRole('dialog', { name: '포스트 보기', exact: true });
+    const readerComments = readerDetail.getByRole('region', { name: '댓글', exact: true });
+    await readerComments.getByLabel('댓글 내용', { exact: true }).fill('원문 댓글');
+    await readerComments.getByRole('button', { name: '댓글 등록', exact: true }).click();
+    const ownComment = readerComments.getByRole('article', { name: 'comment_reader의 댓글', exact: true });
+    await expect(ownComment.getByText('원문 댓글', { exact: true })).toBeVisible();
+    await ownComment.getByRole('button', { name: '댓글 메뉴', exact: true }).click();
+    await ownComment.getByRole('button', { name: '수정', exact: true }).click();
+    await ownComment.getByLabel('댓글 수정', { exact: true }).fill('수정한 댓글');
+    await ownComment.getByRole('button', { name: '저장', exact: true }).click();
+    await expect(ownComment.getByText('수정한 댓글', { exact: true })).toBeVisible();
+    await original.getByRole('button', { name: '댓글 1', exact: true }).click();
+    const ownerDetail = owner.getByRole('dialog', { name: '포스트 보기', exact: true });
+    const ownerComments = ownerDetail.getByRole('region', { name: '댓글', exact: true });
+    const otherComment = ownerComments.getByRole('article', { name: 'comment_reader의 댓글', exact: true });
+    await expect(otherComment.getByRole('button', { name: '댓글 메뉴', exact: true })).toHaveCount(0);
+    await ownerComments.getByLabel('댓글 내용', { exact: true }).fill('작성자의 댓글');
+    await ownerComments.getByRole('button', { name: '댓글 등록', exact: true }).click();
+    await expect(readerComments.getByText('작성자의 댓글', { exact: true })).toBeVisible();
+    await ownComment.getByRole('button', { name: '댓글 메뉴', exact: true }).click();
+    reader.once('dialog', dialog => dialog.accept());
+    await ownComment.getByRole('button', { name: '삭제', exact: true }).click();
+    await expect(otherComment).toHaveCount(0);
+    await readerComments.getByLabel('댓글 내용', { exact: true }).fill('남겨 둘 원문 댓글');
+    await readerComments.getByRole('button', { name: '댓글 등록', exact: true }).click();
+    await reader.keyboard.press('Escape'); await owner.keyboard.press('Escape');
+    await shared.getByRole('button', { name: '댓글 0', exact: true }).click();
+    await readerDetail.getByRole('region', { name: '댓글', exact: true }).getByLabel('댓글 내용', { exact: true }).fill('리포스트만의 댓글');
+    await readerDetail.getByRole('button', { name: '댓글 등록', exact: true }).click();
+    await expect(original.getByRole('button', { name: '댓글 2', exact: true })).toBeVisible();
+    await anon.goto('./');
+    await anon.getByRole('article', { name: 'comment_writer의 글', exact: true }).getByRole('button', { name: '댓글 2', exact: true }).click();
+    const anonDetail = anon.getByRole('dialog', { name: '포스트 보기', exact: true });
+    await expect(anonDetail.getByText('남겨 둘 원문 댓글', { exact: true })).toBeVisible();
+    await expect(anonDetail.getByLabel('댓글 내용', { exact: true })).toHaveCount(0);
+    await original.getByRole('button', { name: '게시물 메뉴', exact: true }).click();
+    owner.once('dialog', dialog => dialog.accept());
+    await original.getByRole('button', { name: '삭제', exact: true }).click();
+    await expect(anonDetail.getByText('삭제되었거나 찾을 수 없는 게시물입니다.')).toBeVisible();
+    await expect(anonDetail.getByText('남겨 둘 원문 댓글', { exact: true })).toHaveCount(0);
+    await expect(readerDetail.getByText('리포스트에 덧붙인 생각 #의견', { exact: true })).toBeVisible();
+    await expect(readerDetail.getByText('리포스트만의 댓글', { exact: true })).toBeVisible();
+    await expect(readerDetail.getByText('삭제되었거나 찾을 수 없는 원문입니다.')).toBeVisible();
+    await reader.setViewportSize({ width: 390, height: 844 });
+    await reader.evaluate(() => localStorage.setItem('postpost:theme', 'dark')); await reader.reload();
+    await expect(readerDetail.getByText('리포스트만의 댓글', { exact: true })).toBeVisible();
+    expect(await reader.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+    await reader.screenshot({ path: 'test-results/repost-comments-mobile.png', fullPage: true });
+  } finally { await ownerContext.close(); await readerContext.close(); await anonContext.close(); }
 });

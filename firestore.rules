@@ -98,9 +98,10 @@ service cloud.firestore {
           && exists(path) && get(path).data.get('kind', 'post') == 'post'
           && get(path).data.get('deleted', false) == false;
       }
+      function repostBody(body) { return body == '' || nonblank(body, 2000); }
       function content(data) {
         return (data.get('kind', 'post') == 'post' && data.get('originalId', null) == null && nonblank(data.body, 2000))
-          || (data.get('kind', 'post') == 'repost' && data.body == '' && data.get('tags', []) == [] && originalExists(data)
+          || (data.get('kind', 'post') == 'repost' && repostBody(data.body) && originalExists(data)
             && postId == 'repost_' + request.auth.uid + '_' + data.originalId);
       }
       allow read: if true;
@@ -116,11 +117,12 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['body', 'tags', 'updatedAt', 'deleted'])
           && request.resource.data.updatedAt == request.time
           && ((request.resource.data.get('deleted', false) == true && request.resource.data.body == '' && request.resource.data.get('tags', []) == [])
-            || (resource.data.get('kind', 'post') == 'post' && request.resource.data.get('deleted', false) == false && content(request.resource.data))))
+            || (request.resource.data.get('deleted', false) == false && ((resource.data.get('kind', 'post') == 'post' && content(request.resource.data)) || (resource.data.get('kind', 'post') == 'repost' && repostBody(request.resource.data.body))))))
         // Reposting a previously removed reference reuses its deterministic ID.
         || (resource.data.get('kind', 'post') == 'repost' && resource.data.get('deleted', false) == true
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted', 'createdAt'])
-          && request.resource.data.deleted == false && request.resource.data.createdAt == request.time && content(request.resource.data))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted', 'createdAt', 'body', 'tags', 'updatedAt'])
+          && request.resource.data.deleted == false && request.resource.data.createdAt == request.time
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['updatedAt']) || request.resource.data.updatedAt == request.time) && content(request.resource.data))
       );
       allow delete: if false;
 
@@ -145,6 +147,43 @@ service cloud.firestore {
           && data.likes == oldCount('likes') + delta('like')
           && data.dislikes == oldCount('dislikes') + delta('dislike');
       }
+      function commentActive(path, after) {
+        return after ? (existsAfter(path) && getAfter(path).data.deleted == false) : (exists(path) && get(path).data.deleted == false);
+      }
+      function commentCounts(data) {
+        let comment = /databases/$(database)/documents/posts/$(postId)/comments/$(data.lastCommentId);
+        let counts = /databases/$(database)/documents/posts/$(postId)/stats/comments;
+        let before = exists(counts) ? get(counts).data.count : 0;
+        return data.keys().hasAll(['count', 'lastCommentId']) && data.keys().hasOnly(['count', 'lastCommentId'])
+          && data.count is int && data.count >= 0 && data.lastCommentId is string && data.lastCommentId.matches('[^/]+')
+          && (exists(comment) || existsAfter(comment))
+          && (!exists(comment) || get(comment).data.authorId == request.auth.uid)
+          && (!existsAfter(comment) || getAfter(comment).data.authorId == request.auth.uid)
+          && data.count == before + (commentActive(comment, true) ? 1 : 0) - (commentActive(comment, false) ? 1 : 0);
+      }
+      function commentsOpen() { return parent().get('deleted', false) == false; }
+      match /comments/{commentId} {
+        function validComment(data) {
+          return data.keys().hasAll(['body', 'authorId', 'authorName', 'createdAt', 'deleted'])
+            && data.keys().hasOnly(['body', 'authorId', 'authorName', 'createdAt', 'deleted', 'updatedAt'])
+            && nonblank(data.authorName, 30) && data.deleted is bool;
+        }
+        function countsMatch() {
+          let path = /databases/$(database)/documents/posts/$(postId)/stats/comments;
+          return getAfter(path).data.lastCommentId == commentId && commentCounts(getAfter(path).data);
+        }
+        allow read: if commentsOpen();
+        allow create: if signedIn() && commentsOpen() && validComment(request.resource.data)
+          && request.resource.data.authorId == request.auth.uid && request.resource.data.createdAt == request.time
+          && !request.resource.data.keys().hasAny(['updatedAt']) && request.resource.data.deleted == false
+          && nonblank(request.resource.data.body, 1000) && countsMatch();
+        allow update: if signedIn() && commentsOpen() && resource.data.authorId == request.auth.uid && resource.data.deleted == false
+          && validComment(request.resource.data) && request.resource.data.updatedAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['body', 'deleted', 'updatedAt'])
+          && ((request.resource.data.deleted == false && nonblank(request.resource.data.body, 1000))
+            || (request.resource.data.deleted == true && request.resource.data.body == '' && countsMatch()));
+        allow delete: if false;
+      }
       match /reactions/{uid} {
         // Only the author can list identities. A reactor can get their own choice.
         allow get: if signedIn() && (request.auth.uid == uid || parent().authorId == request.auth.uid);
@@ -158,7 +197,8 @@ service cloud.firestore {
       }
       match /stats/{statId} {
         allow read: if true;
-        allow create, update: if statId == 'reactions' && reactable() && validCounts(request.resource.data);
+        allow create, update: if (statId == 'reactions' && reactable() && validCounts(request.resource.data))
+          || (statId == 'comments' && signedIn() && commentsOpen() && commentCounts(request.resource.data));
         allow delete: if false;
       }
     }
