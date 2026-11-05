@@ -189,3 +189,46 @@ test('profile and link validation, owner edits, and private quota reads are enfo
   await assertFails(changeHandle('alice', 'UPPERCASE'));
   await assertFails(changeHandle('alice', 'x'));
 });
+
+test('private activity requires an actual matching reaction and cannot be read by others', async () => {
+  await setDoc(doc(writer(), 'posts/first'), validPost());
+  await changeReaction('reader', 'like');
+  const reader = environment.authenticatedContext('reader').firestore();
+  const ref = doc(reader, 'users/reader/activity/reaction_first');
+  const value = { postId: 'first', kind: 'like', updatedAt: serverTimestamp() };
+  await assertSucceeds(setDoc(ref, value));
+  await assertSucceeds(getDocs(collection(reader, 'users/reader/activity')));
+  await assertFails(getDoc(doc(writer(), 'users/reader/activity/reaction_first')));
+  await assertFails(getDoc(doc(environment.unauthenticatedContext().firestore(), 'users/reader/activity/reaction_first')));
+  await assertFails(setDoc(ref, { ...value, kind: 'dislike' }));
+  await assertFails(setDoc(doc(reader, 'users/reader/activity/arbitrary'), value));
+  await assertFails(setDoc(doc(reader, 'users/other/activity/reaction_first'), value));
+  await assertFails(deleteDoc(ref));
+  await changeReaction('reader', null);
+  await assertSucceeds(deleteDoc(ref));
+});
+test('login throttling records are inaccessible to every client', async () => {
+  const ref = doc(writer(), 'loginAttempts/some-ip-hash');
+  await assertFails(getDoc(ref));
+  await assertFails(setDoc(ref, { count: 0 }));
+  await assertFails(getDocs(collection(writer(), 'loginAttempts')));
+});
+
+test('legacy reactions and reposts without activity records can still be cancelled atomically', async () => {
+  await setDoc(doc(writer(), 'posts/first'), validPost());
+  await changeReaction('reader', 'like');
+  const reader = environment.authenticatedContext('reader').firestore();
+  await assertSucceeds(runTransaction(reader, async tx => {
+    await tx.get(doc(reader, 'posts/first/reactions/reader'));
+    tx.delete(doc(reader, 'posts/first/reactions/reader'));
+    tx.set(doc(reader, 'posts/first/stats/reactions'), { likes: 0, dislikes: 0 });
+    tx.delete(doc(reader, 'users/reader/activity/reaction_first'));
+  }));
+  const ref = doc(reader, 'posts/repost_reader_first');
+  await setDoc(ref, { body: '', tags: [], kind: 'repost', originalId: 'first', deleted: false, authorId: 'reader', authorName: 'reader', createdAt: serverTimestamp() });
+  await assertSucceeds(runTransaction(reader, async tx => {
+    await tx.get(ref);
+    tx.update(ref, { body: '', tags: [], deleted: true, updatedAt: serverTimestamp() });
+    tx.delete(doc(reader, 'users/reader/activity/repost_first'));
+  }));
+});

@@ -1,6 +1,23 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Only the trusted login function can read/write throttle records.
+    match /loginAttempts/{id} { allow read, write: if false; }
+    match /users/{uid}/activity/{activityId} {
+      function own() { return request.auth != null && request.auth.uid == uid; }
+      function source(data) {
+        let postId = data.postId;
+        let reaction = /databases/$(database)/documents/posts/$(postId)/reactions/$(uid);
+        let repost = /databases/$(database)/documents/posts/$('repost_' + uid + '_' + postId);
+        return data.postId is string && data.postId.matches('[^/]+') && (
+          (data.kind in ['like', 'dislike'] && activityId == 'reaction_' + postId && existsAfter(reaction) && getAfter(reaction).data.kind == data.kind)
+          || (data.kind == 'repost' && activityId == 'repost_' + postId && existsAfter(repost) && getAfter(repost).data.deleted == false));
+      }
+      allow read: if own();
+      allow create, update: if own() && request.resource.data.keys().hasAll(['postId', 'kind', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['postId', 'kind', 'updatedAt']) && request.resource.data.updatedAt == request.time && source(request.resource.data);
+      allow delete: if own() && (!exists(/databases/$(database)/documents/users/$(uid)/activity/$(activityId)) || !source(resource.data));
+    }
     function validHandle(handle) { return handle is string && handle.matches('[a-z][a-z0-9_]{2,19}'); }
     function profileRef(uid) { return /databases/$(database)/documents/profiles/$(uid); }
     function limitRef(uid) { return /databases/$(database)/documents/profileLimits/$(uid); }

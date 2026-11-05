@@ -22,6 +22,9 @@ export async function reactTo(post: Post, user: User, kind: ReactionKind) {
     if (next) transaction.set(reactionRef, { name: user.displayName?.trim().slice(0, 30) || '작성자', kind: next });
     else transaction.delete(reactionRef);
     transaction.set(statsRef, { likes, dislikes });
+    const activity = doc(db!, 'users', user.uid, 'activity', `reaction_${post.id}`);
+    if (next) transaction.set(activity, { postId: post.id, kind: next, updatedAt: serverTimestamp() });
+    else transaction.delete(activity);
   });
 }
 export async function repost(original: Post, user: User) {
@@ -33,11 +36,13 @@ export async function repost(original: Post, user: User) {
     if (!parent.exists() || parent.data().deleted) throw new Error('Deleted original');
     if (existing.exists() && !existing.data().deleted) {
       transaction.update(ref, { body: '', tags: [], deleted: true, updatedAt: serverTimestamp() });
+      transaction.delete(doc(db!, 'users', user.uid, 'activity', `repost_${original.id}`));
       return;
     }
     const data = { body: '', tags: [], authorId: user.uid, authorName: user.displayName?.trim().slice(0, 30) || '작성자', createdAt: serverTimestamp(), kind: 'repost', originalId: original.id, deleted: false };
     if (existing.exists()) transaction.update(ref, { deleted: false, createdAt: serverTimestamp() });
     else transaction.set(ref, data);
+    transaction.set(doc(db!, 'users', user.uid, 'activity', `repost_${original.id}`), { postId: original.id, kind: 'repost', updatedAt: serverTimestamp() });
   });
 }
 export async function editPost(post: Post, body: string) {
