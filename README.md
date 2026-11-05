@@ -1,2 +1,92 @@
-# vite-react-posts
-A simple Vite + React web service with a post-style UI.
+# Postpost
+
+Firebase 기반의 가벼운 텍스트 게시판입니다. React + TypeScript + Vite를 사용합니다.
+
+- 이메일/비밀번호 회원가입, 로그인, 로그아웃 및 로그인 상태 유지
+- 닉네임, 텍스트 글 작성(최대 2,000자), 게시 시각
+- 비로그인 사용자도 읽을 수 있는 실시간 최신 글 50개
+- 모바일 화면, 로딩·오류·빈 목록 상태, Firebase 미설정 안내
+- 첨부파일, 댓글, 수정·삭제 기능은 포함하지 않습니다.
+
+## 로컬 실행
+
+Node.js 22.12 이상이 필요합니다. 현재 클라우드에서는 Node.js 24로 검증했습니다.
+
+```sh
+npm ci
+cp .env.example .env.local
+# .env.local의 네 항목을 채운 뒤 실행
+npm run dev
+```
+
+이미 `.env.local`이 있으면 복사하지 말고 기존 파일을 편집하세요. 환경 변수를 수정하면 개발 서버를 다시 시작하세요. 키가 없으면 안내 화면을 보여주며 Firebase 요청을 보내지 않습니다.
+
+```sh
+npm test       # 입력 검증 테스트
+npm run build # TypeScript 검사 + 프로덕션 번들
+npm run preview
+```
+
+Firestore 보안 규칙 테스트는 Java 21 이상과 에뮬레이터 다운로드 권한이 필요합니다. 실제 Firebase 키나 프로젝트는 필요하지 않습니다.
+
+```sh
+npm run test:rules
+```
+
+현재 클라우드에서는 에뮬레이터 다운로드 호스트 `storage.googleapis.com`이 네트워크 정책으로 차단되어 규칙 테스트를 실행하지 못했습니다. 이 도메인을 허용한 뒤 위 명령으로 검증할 수 있습니다.
+
+## Firebase 프로젝트 연결
+
+1. [Firebase Console](https://console.firebase.google.com/)에서 프로젝트를 만들고 **프로젝트 설정 → 일반 → 내 앱 → 웹 앱**을 등록합니다. Analytics는 필요하지 않습니다.
+2. 웹 앱의 `firebaseConfig`에서 아래 값을 `.env.local`에 입력합니다.
+
+   | 환경 변수 | firebaseConfig 필드 |
+   | --- | --- |
+   | `VITE_FIREBASE_API_KEY` | `apiKey` |
+   | `VITE_FIREBASE_AUTH_DOMAIN` | `authDomain` |
+   | `VITE_FIREBASE_PROJECT_ID` | `projectId` |
+   | `VITE_FIREBASE_APP_ID` | `appId` |
+
+3. **Authentication → Sign-in method**에서 **이메일/비밀번호**를 활성화합니다. 이메일 링크 로그인은 사용하지 않습니다. 가입 폼은 최소 8자를 요구합니다. 콘솔에서 더 강한 비밀번호 정책을 적용하면 해당 조건도 충족해야 합니다.
+4. **Authentication → Settings → Authorized domains**에 실제 서비스 도메인을 등록합니다. 로컬 개발에는 `localhost`도 등록하세요. 최근 생성된 프로젝트에서는 자동 등록되지 않을 수 있습니다.
+5. **Firestore Database**를 생성합니다. 보안 규칙을 아래 `firestore.rules` 내용으로 배포하기 전까지 서비스를 공개하지 마세요. `posts` 컬렉션은 첫 게시 시 생성됩니다. 별도 복합 인덱스는 필요하지 않습니다.
+
+이 네 값은 브라우저에서 사용하는 **공개 웹 앱 설정**이며 빌드 결과에 포함됩니다. 서비스 계정 JSON, Admin SDK 개인 키, 비밀번호를 `VITE_` 변수에 넣지 마세요. `.env.local`은 Git에서 제외됩니다. 웹 API 키는 해당 프로젝트의 웹 앱 설정 값을 사용하세요. Firestore 접근 권한은 보안 규칙으로 제어합니다.
+
+## 보안 규칙과 데이터
+
+`posts/{id}`에 `body`, `authorId`, `authorName`, `createdAt`을 저장합니다. 본문은 HTML로 해석하지 않고 일반 텍스트로 표시합니다. 작성자 이메일은 게시 데이터에 저장하지 않습니다. 닉네임은 공개 표시용이며 고유하거나 인증된 신원을 의미하지 않습니다.
+
+- 읽기: 누구나 가능. 비공개 내용을 올리지 마세요.
+- 생성: 로그인 필요. `authorId`는 본인 UID여야 하고 `createdAt`은 서버 시각이어야 합니다.
+- 본문: 공백만 있는 글 금지, 최대 2,000자. 닉네임: 1~30자.
+- 추가 필드, 수정, 삭제와 다른 컬렉션 접근은 허용하지 않습니다.
+
+베타 범위에는 이메일 인증 필수화, 비밀번호 재설정 UI, 게시 빈도 제한, 신고·관리 기능이 없습니다. 공개 서비스로 확대할 때 Firebase App Check, 예산 알림과 악용 방지 기능을 별도로 설정하세요.
+
+## 규칙 및 Hosting 배포
+
+Firebase CLI 로그인은 본인 환경에서 진행합니다. 아래 명령의 `YOUR_PROJECT_ID`를 실제 프로젝트 ID로 바꾸세요. 배포할 때도 네 가지 환경 변수가 필요합니다. Vite는 실행 시가 아닌 **빌드 시** 환경 변수를 번들에 반영합니다.
+
+```sh
+npx firebase-tools login
+npx firebase-tools deploy --only firestore:rules --project YOUR_PROJECT_ID
+npm run build
+npx firebase-tools deploy --only hosting --project YOUR_PROJECT_ID
+```
+
+프로젝트 ID와 인증 정보는 저장소에 고정하지 않았습니다. Firebase 콘솔의 Rules 편집기에서 `firestore.rules`를 직접 게시할 수도 있습니다. 저장소의 `firebase.json`에는 SPA Hosting 설정이 포함되어 있습니다.
+
+## 연결 후 기능 확인
+
+실제 Firebase 프로젝트 연결 및 규칙 배포 후 다음을 확인하세요. 키가 없는 상태의 빌드와 입력 검증 테스트만으로 Firebase 연동 성공을 판단할 수 없습니다.
+
+1. 새 이메일로 가입하고 닉네임이 표시되는지 확인합니다.
+2. 글을 게시하고 새로고침 후에도 로그인 상태와 글이 유지되는지 확인합니다.
+3. 로그아웃한 상태에서 글 목록은 보이고 글 작성은 로그인으로 안내되는지 확인합니다.
+4. 다른 브라우저에서 로그인해 글을 추가하고 첫 브라우저 목록에 실시간 반영되는지 확인합니다.
+5. Firebase Rules Playground에서 비로그인 생성, 다른 UID로 생성, 추가 필드, 2,001자 본문, 수정·삭제가 모두 거절되는지 확인합니다.
+
+## 클라우드 작업
+
+체크아웃 경로는 `/workspace/Postpost`입니다. 각 클라우드 작업은 격리되므로 기존 체크아웃을 사용하고, 명시적 요청 없이 별도 Git worktree를 만들지 마세요. 의존성은 `npm ci`, 개발 서버는 해당 경로에서 `npm run dev`로 실행합니다. Firebase 환경 변수는 환경 설정에 입력할 수도 있습니다. 프로세스는 새 작업에서 다시 실행해야 합니다.
