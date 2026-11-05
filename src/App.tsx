@@ -1,152 +1,63 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import {
-  createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword,
-  signOut, updateProfile, type User,
-} from 'firebase/auth';
-import {
-  addDoc, collection, limit, onSnapshot, orderBy, query, serverTimestamp, type Timestamp,
-} from 'firebase/firestore';
-import { auth, db, missingConfig } from './firebase';
-import { MAX_POST_LENGTH, validateAccount, validatePost } from './validation.mjs';
+import { useEffect, useRef, useState } from 'react';
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
+import { auth, db } from './firebase';
+import { errorMessage } from './model';
+import { matchesSearch } from './content.mjs';
+import { useFeed } from './hooks/useFeed';
+import AccountForm from './components/AccountForm';
+import Composer from './components/Composer';
+import PostCard from './components/PostCard';
+import PostDetail from './components/PostDetail';
 
-type Post = { id: string; body: string; authorId: string; authorName: string; createdAt: Timestamp | null };
-
-function errorMessage(error: unknown) {
-  const code = (error as { code?: string })?.code;
-  switch (code) {
-    case 'auth/invalid-credential':
-    case 'auth/user-not-found':
-    case 'auth/wrong-password': return '이메일 또는 비밀번호를 확인해 주세요.';
-    case 'auth/email-already-in-use': return '이미 가입된 이메일입니다. 로그인해 주세요.';
-    case 'auth/invalid-email': return '올바른 이메일 주소를 입력해 주세요.';
-    case 'auth/weak-password':
-    case 'auth/password-does-not-meet-requirements': return 'Firebase 프로젝트의 비밀번호 정책을 확인해 주세요.';
-    case 'auth/too-many-requests': return '요청이 많아 잠시 제한됐어요. 잠시 후 다시 시도해 주세요.';
-    case 'auth/network-request-failed':
-    case 'unavailable': return '연결이 원활하지 않아요. 네트워크를 확인해 주세요.';
-    case 'permission-denied': return '접근 권한이 없어요. 로그인 상태와 Firestore 보안 규칙을 확인해 주세요.';
-    case 'auth/operation-not-allowed': return 'Firebase에서 이메일/비밀번호 로그인을 활성화해 주세요.';
-    case 'auth/unauthorized-domain': return 'Firebase Authentication에 현재 도메인을 등록해 주세요.';
-    default: return '요청을 처리하지 못했어요. Firebase 설정을 확인한 후 다시 시도해 주세요.';
-  }
+const base = import.meta.env.BASE_URL;
+function detailId() {
+  const match = location.hash.match(/^#\/posts\/([^/]+)$/);
+  try { return match ? decodeURIComponent(match[1]) : null; } catch { return null; }
 }
-
-function AccountForm({ onClose }: { onClose: () => void }) {
-  const [signup, setSignup] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (busy || !auth) return;
-    const invalid = validateAccount(email, password, name, signup);
-    if (invalid) { setError(invalid); return; }
-    setBusy(true); setError('');
-    try {
-      if (signup) {
-        const result = await createUserWithEmailAndPassword(auth, email.trim(), password);
-        try {
-          await updateProfile(result.user, { displayName: name.trim() });
-        } catch {
-          // Account creation already succeeded; do not offer a misleading signup retry.
-          window.alert('계정은 생성됐지만 닉네임 저장에 실패했어요. 글에는 “작성자”로 표시됩니다.');
-        }
-      } else {
-        await signInWithEmailAndPassword(auth, email.trim(), password);
-      }
-      onClose();
-    } catch (e) { setError(errorMessage(e)); }
-    finally { setBusy(false); }
-  }
-  return <section className="account panel" aria-labelledby="account-heading">
-    <div className="section-top"><span className="eyebrow">YOUR LITTLE SPACE</span><button type="button" className="text-button" onClick={onClose} disabled={busy}>닫기 ×</button></div>
-    <h2 id="account-heading">{signup ? '첫 이야기를 시작해요.' : '다시 만나 반가워요.'}</h2>
-    <p className="muted">{signup ? '이메일로 가입하고 생각을 남겨 보세요.' : '로그인하고 오늘의 생각을 남겨 보세요.'}</p>
-    <form onSubmit={submit}>
-      {signup && <label>닉네임<input autoFocus value={name} onChange={e => setName(e.target.value)} maxLength={30} required autoComplete="nickname" disabled={busy} /></label>}
-      <label>이메일<input autoFocus={!signup} type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" disabled={busy} placeholder="you@example.com" /></label>
-      <label>비밀번호<input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={signup ? 8 : undefined} autoComplete={signup ? 'new-password' : 'current-password'} disabled={busy} placeholder={signup ? '8자 이상 입력해 주세요' : '비밀번호를 입력해 주세요'} /></label>
-      {error && <p className="error" role="alert">{error}</p>}
-      <button className="primary wide" disabled={busy}>{busy ? '처리 중…' : signup ? '계정 만들기' : '로그인'}</button>
-    </form>
-    <p className="account-switch">{signup ? '이미 계정이 있나요?' : '처음 오셨나요?'} <button type="button" className="text-button" disabled={busy} onClick={() => { setSignup(!signup); setError(''); setPassword(''); }}>{signup ? '로그인' : '회원가입'}</button></p>
-  </section>;
+function About() {
+  return <article className="about panel"><h1>About Postpost</h1><p className="eyebrow">A PLACE FOR YOUR THOUGHTS</p><h2>가벼운 생각도,<br />하나의 이야기가 되니까.</h2><p>오늘의 발견, 문득 든 생각, 남기고 싶은 한마디. 여기에 편하게 놓아두세요.</p><h2>작은 기록을 나누는 공간</h2><p>잘 쓴 글이 아니어도 괜찮아요. 지금 떠오른 생각이면 충분해요. Postpost는 짧은 텍스트로 일상을 기록하고 서로의 생각을 읽는 게시판입니다.</p><h2>글과 해시태그</h2><p>로그인하면 최대 2,000자까지 작성할 수 있습니다. #일상 #독서처럼 태그를 넣어 보세요. 검색창은 현재 불러온 게시물의 본문과 작성자를 검색하고, #태그는 정확한 태그로 찾습니다. 여러 검색어는 모두 포함하는 글을 찾습니다. 더 불러오면 검색 범위도 넓어집니다.</p><h2>반응과 리포스트</h2><p>좋아요와 싫어요 중 하나를 선택할 수 있고 다시 누르면 취소됩니다. 반응 수는 공개되지만 누가 눌렀는지는 해당 글 작성자만 목록으로 볼 수 있습니다. 본인은 자신의 반응을 확인할 수 있습니다. 리포스트는 원문을 참조하며 원 포스트 보기를 누르면 창에서 읽을 수 있습니다.</p><h2>공개 범위와 나의 기록</h2><p>모든 게시물은 로그인하지 않아도 읽을 수 있습니다. 개인정보나 비공개 내용을 올리지 마세요. 본인 글은 수정·삭제할 수 있고 리포스트도 삭제할 수 있습니다. 삭제된 원문 내용은 리포스트에서도 보이지 않습니다. 이미 외부에서 복사한 내용까지 회수되지는 않습니다.</p><p>초안은 이 브라우저 탭에 계정별로 저장됩니다. 탭을 닫으면 복원이 보장되지 않습니다. 닉네임은 고유하거나 인증된 신원을 의미하지 않으며 반응 목록에는 반응 당시 이름이 표시됩니다.</p><h2>함께 지켜 주세요</h2><p>서로를 존중하고 혐오·괴롭힘·개인정보 노출을 피해주세요. 현재 베타에는 댓글, 이미지 업로드, 신고·관리 UI가 없습니다.</p><a className="button primary" href={base}>피드로 돌아가기</a></article>;
 }
-
-function dateLabel(timestamp: Timestamp | null) {
-  if (!timestamp) return '방금 전';
-  return timestamp.toDate().toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
 export default function App() {
+  const about = location.pathname.replace(/\/$/, '').endsWith('/About');
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(Boolean(auth));
-  const [accountOpen, setAccountOpen] = useState(false);
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(Boolean(db));
-  const [fromCache, setFromCache] = useState(true);
-  const [feedError, setFeedError] = useState('');
-  const [feedAttempt, setFeedAttempt] = useState(0);
-  const [body, setBody] = useState('');
+  const [accountOpen, setAccountOpen] = useState(new URLSearchParams(location.search).get('login') === '1');
   const [posting, setPosting] = useState(false);
-  const [actionError, setActionError] = useState('');
-  const [notice, setNotice] = useState('');
-
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState(''); const [mine, setMine] = useState(false);
+  const [selected, setSelected] = useState(detailId);
+  const accountButton = useRef<HTMLButtonElement>(null);
+  const feed = useFeed(!about);
   useEffect(() => {
     if (!auth) return;
-    return onAuthStateChanged(auth, next => { setUser(next); setAuthLoading(false); }, e => { setActionError(errorMessage(e)); setAuthLoading(false); });
+    return onAuthStateChanged(auth, value => { setUser(value); setAuthLoading(false); setMine(false); }, e => { setError(errorMessage(e)); setAuthLoading(false); });
   }, []);
-  useEffect(() => {
-    if (!db) return;
-    setLoading(true); setFeedError('');
-    return onSnapshot(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(50)), { includeMetadataChanges: true }, snapshot => {
-      setPosts(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }) as Post));
-      setFromCache(snapshot.metadata.fromCache);
-      setLoading(false);
-    }, e => { setFeedError(errorMessage(e)); setLoading(false); });
-  }, [feedAttempt]);
-
-  async function publish(event: FormEvent) {
-    event.preventDefault();
-    if (!user || !db || posting) return;
-    const invalid = validatePost(body);
-    if (invalid) { setActionError(invalid); return; }
-    setPosting(true); setActionError(''); setNotice('');
-    try {
-      await addDoc(collection(db, 'posts'), {
-        body: body.trim(), authorId: user.uid,
-        authorName: user.displayName?.trim().slice(0, 30) || '작성자',
-        createdAt: serverTimestamp(),
-      });
-      setBody(''); setNotice('글을 게시했어요.');
-    } catch (e) { setActionError(errorMessage(e)); }
-    finally { setPosting(false); }
-  }
+  useEffect(() => { const changed = () => setSelected(detailId()); window.addEventListener('hashchange', changed); return () => window.removeEventListener('hashchange', changed); }, []);
+  function closeDetail() { history.replaceState(null, '', location.pathname + location.search); setSelected(null); }
+  function openLogin() { closeDetail(); setAccountOpen(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  function tagSearch(tag: string) { closeDetail(); setSearch(`#${tag}`); document.getElementById('feed-search')?.focus(); }
   async function logout() {
     if (!auth || posting) return;
-    try { await signOut(auth); setBody(''); setNotice('로그아웃했어요.'); setActionError(''); }
-    catch (e) { setActionError(errorMessage(e)); }
+    try { await signOut(auth); setAccountOpen(false); setError(''); } catch (e) { setError(errorMessage(e)); }
   }
-
+  const visible = feed.posts.filter(post => !post.deleted && (!mine || post.authorId === user?.uid) && matchesSearch(post, search));
   return <>
-    <header className="header"><a className="wordmark" href={import.meta.env.BASE_URL} aria-label="Postpost 홈">postpost<span className="brand-dot">.</span><span className="beta">BETA</span></a>
-      <nav aria-label="계정">{authLoading ? <span className="muted">연결 중…</span> : user ? <><span className="user-name">{user.displayName || '작성자'} 님</span><button className="small-button" onClick={logout} disabled={posting}>로그아웃</button></> : <button className="small-button" disabled={!auth} onClick={() => setAccountOpen(!accountOpen)}>로그인 / 가입</button>}</nav>
-    </header>
-    <main>
-      <section className="intro"><span className="eyebrow"><span className="live-dot" /> A PLACE FOR YOUR THOUGHTS</span><h1>가벼운 생각도,<br /><span>하나의 이야기가 되니까.</span></h1><p>오늘의 발견, 문득 든 생각, 남기고 싶은 한마디.<br className="mobile-break" /> 여기에 편하게 놓아두세요.</p></section>
-      {missingConfig.length > 0 ? <section className="panel setup" aria-labelledby="setup-title"><span className="eyebrow">LET’S GET STARTED</span><h2 id="setup-title">곧, 이야기가 시작됩니다.</h2><p>Firebase 연결을 준비하고 있어요. 연결이 완료되면 로그인하고 글을 남길 수 있습니다.</p><p className="muted">프로젝트 관리자는 README의 Firebase 설정 가이드를 확인해 주세요.</p></section> : <div className="layout">
-        <aside>{accountOpen ? <AccountForm onClose={() => setAccountOpen(false)} /> : <section className="panel note"><span className="note-icon" aria-hidden="true">↗</span><span className="eyebrow">SMALL WORDS, BIG DAYS</span><h2>당신의 일상을<br />기록해 보세요.</h2><p>잘 쓴 글이 아니어도 괜찮아요.<br />지금 떠오른 생각이면 충분해요.</p><div className="note-line" /><p className="tiny">모든 글은 누구나 읽을 수 있어요.<br />서로를 존중하는 이야기를 나눠 주세요.</p></section>}</aside>
-        <div className="feed-column"><section className="panel composer" aria-label="글 작성">
-          <div className="composer-heading"><span className="avatar" aria-hidden="true">{(user?.displayName || 'P').slice(0, 1).toUpperCase()}</span><div><strong>{user ? `${user.displayName || '작성자'} 님의 이야기` : '오늘은 어떤 생각을 했나요?'}</strong><p className="tiny">작은 이야기 하나를 남겨 보세요.</p></div></div>
-          {user ? <form onSubmit={publish}><label className="sr-only" htmlFor="post-body">게시할 글</label><textarea id="post-body" placeholder="지금 떠오른 생각을 자유롭게 적어 주세요…" value={body} onChange={e => { setBody(e.target.value); setNotice(''); }} maxLength={MAX_POST_LENGTH} disabled={posting} required /><div className="composer-footer"><span className="tiny">{body.length.toLocaleString()} / {MAX_POST_LENGTH.toLocaleString()}</span><button className="primary" disabled={posting || !body.trim()}>{posting ? '게시 중…' : '글 게시하기 ↗'}</button></div></form> : <div className="login-prompt"><p>로그인하고 나만의 이야기를 시작해 보세요.</p><button className="primary" disabled={authLoading} onClick={() => setAccountOpen(true)}>로그인하고 글 쓰기 ↗</button></div>}
-        </section>
-          {actionError && <p className="error" role="alert">{actionError}</p>}<p className="notice" role="status">{notice}</p>
-          <div className="feed-heading"><h2>모두의 이야기 <span className="feed-count">{posts.length}</span></h2><span className="tiny">{fromCache ? '서버 연결 확인 중' : '최근 50개 · 최신순'}</span></div>
-          {loading ? <div className="panel empty" role="status">이야기를 불러오는 중이에요…</div> : feedError ? <div className="panel empty"><p className="error" role="alert">{feedError}</p><button className="small-button" onClick={() => setFeedAttempt(value => value + 1)}>다시 불러오기</button></div> : posts.length === 0 ? <div className="panel empty"><span className="empty-mark" aria-hidden="true">✳</span><h3>{fromCache ? '서버 연결을 기다리고 있어요.' : '아직은 빈 페이지예요.'}</h3><p>{fromCache ? '네트워크 연결 후 글 목록을 불러옵니다.' : '첫 번째 이야기를 남겨 주세요.'}</p></div> : <div className="posts">{posts.map(post => <article className="panel post" key={post.id}><div className="post-heading"><span className="avatar soft" aria-hidden="true">{(post.authorName || 'P').slice(0, 1).toUpperCase()}</span><div><strong>{post.authorName || '작성자'}</strong><p className="tiny">{dateLabel(post.createdAt)}</p></div>{user?.uid === post.authorId && <span className="mine">내 글</span>}</div><p className="post-body">{post.body}</p></article>)}</div>}
-        </div>
-      </div>}
-    </main><footer><span className="footer-brand">postpost.</span><span>작은 생각이 모이는 곳.</span><span>© {new Date().getFullYear()} Postpost</span></footer>
+    <a className="skip-link" href="#main">본문으로 건너뛰기</a>
+    <header className="header"><a className="wordmark" href={base} aria-label="Postpost 홈">postpost.</a><nav aria-label="주 메뉴"><a href={base} aria-current={!about ? 'page' : undefined}>피드</a><a href={`${base}About/`} aria-current={about ? 'page' : undefined}>About</a></nav><div className="account-nav">{authLoading ? <span>연결 중…</span> : user ? <><span className="user-name">{user.displayName || '작성자'} 님</span><button disabled={posting} onClick={logout}>로그아웃</button></> : <button ref={accountButton} onClick={() => about ? location.assign(`${base}?login=1`) : setAccountOpen(!accountOpen)} disabled={!auth}>로그인 / 가입</button>}</div></header>
+    <main id="main">
+      {about ? <About /> : <>
+        <div className="page-title"><h1>피드</h1><span className="muted">최신순</span></div>
+        {!auth || !db ? <section className="panel"><h2>연결을 준비하고 있어요.</h2><p>Firebase 설정이 완료되면 게시판을 사용할 수 있습니다.</p></section> : <>
+          {accountOpen && <AccountForm onClose={() => { setAccountOpen(false); history.replaceState(null, '', location.pathname + location.hash); accountButton.current?.focus(); setUser(auth?.currentUser || null); }} />}
+          {user ? <Composer key={user.uid} user={user} onBusy={setPosting} /> : <section className="panel login-prompt"><p>글을 남기려면 로그인해 주세요.</p><button className="primary" onClick={openLogin} disabled={authLoading}>로그인하고 글 쓰기</button></section>}
+          {error && <p className="error" role="alert">{error}</p>}
+          <section className="feed-tools panel" aria-label="게시물 검색"><label htmlFor="feed-search">포스트 검색</label><div className="search-row"><input id="feed-search" type="search" placeholder="본문, 작성자 또는 #해시태그" value={search} onChange={e => setSearch(e.target.value)} /><button onClick={() => setSearch('')} disabled={!search}>지우기</button></div><div className="actions" aria-label="목록 필터"><button aria-pressed={!mine} onClick={() => setMine(false)}>모든 글</button><button aria-pressed={mine} disabled={!user} onClick={() => setMine(true)}>내 글</button></div><p className="muted">불러온 글 {feed.posts.filter(post => !post.deleted).length}개에서 검색 · 결과 {visible.length}개</p></section>
+          {feed.cached && <p className="connection" role="status">서버 연결 확인 중 · 저장된 목록이 표시될 수 있습니다.</p>}
+          {feed.error ? <div className="panel"><p className="error" role="alert">{feed.error}</p><button onClick={feed.retry}>다시 불러오기</button></div> : <>{feed.loading && <p role="status">불러오는 중…</p>}<div className="posts">{visible.map(post => <PostCard key={post.id} post={post} user={user} onLogin={openLogin} onTag={tagSearch} />)}</div>{!feed.loading && visible.length === 0 && <section className="panel empty"><h2>{feed.cached ? '서버 연결을 기다리고 있어요.' : search || mine ? '조건에 맞는 글이 없어요.' : '첫 번째 글을 남겨보세요.'}</h2>{(search || mine) && <p>검색어를 바꾸거나 이전 글을 더 불러와 보세요.</p>}</section>}{feed.more && <button className="load-more" disabled={feed.loading || feed.cached} onClick={feed.loadMore}>이전 글 50개 더 불러오기</button>}</>}
+        </>}
+      </>}
+    </main>
+    <footer><span>© {new Date().getFullYear()} Postpost</span><a href={`${base}About/`}>서비스 소개와 이용 안내</a></footer>
+    {selected && <PostDetail key={selected} id={selected} user={user} onClose={closeDetail} onLogin={openLogin} onTag={tagSearch} />}
   </>;
 }

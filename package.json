@@ -8,10 +8,11 @@
   },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/create-pages-routes.mjs",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "node --test tests/validation.test.mjs",
-    "test:rules": "npx --yes firebase-tools@15.35.0 emulators:exec --only firestore --project demo-postpost \"node --test tests/firestore.rules.test.mjs\""
+    "test": "node --test tests/validation.test.mjs tests/content.test.mjs",
+    "test:rules": "npx --yes firebase-tools@15.35.0 emulators:exec --only firestore --project demo-postpost \"node --test tests/firestore.rules.test.mjs\"",
+    "test:e2e": "npx --yes firebase-tools@15.35.0 emulators:exec --only auth,firestore --project demo-postpost \"playwright test\""
   },
   "dependencies": {
     "firebase": "13.2.0",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^6.0.0",
+    "@playwright/test": "^1.64.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.0",

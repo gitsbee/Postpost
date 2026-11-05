@@ -13,7 +13,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    if: github.ref == 'refs/heads/beta'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: Verify Firestore permissions with demo data
+        run: npm run test:rules
+      - name: Verify browser flows with demo Auth and Firestore
+        run: npm run test:e2e
+
   build:
+    needs: verify
     if: github.ref == 'refs/heads/beta'
     runs-on: ubuntu-latest
     permissions:

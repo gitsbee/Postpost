@@ -2,20 +2,89 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /posts/{postId} {
+      function signedIn() { return request.auth != null; }
+      function owner() { return signedIn() && resource.data.authorId == request.auth.uid; }
+      function nonblank(value, maximum) {
+        return value is string && value.size() >= 1 && value.size() <= maximum
+          && value.matches('[\\s\\S]*[^\\s][\\s\\S]*');
+      }
+      function fields(data) {
+        return data.keys().hasAll(['body', 'authorId', 'authorName', 'createdAt'])
+          && data.keys().hasOnly(['body', 'authorId', 'authorName', 'createdAt', 'kind', 'originalId', 'tags', 'deleted', 'updatedAt'])
+          && nonblank(data.authorName, 30)
+          && data.get('tags', []) is list && data.get('tags', []).size() <= 10
+          && data.get('deleted', false) is bool;
+      }
+      function originalExists(data) {
+        let id = data.originalId;
+        let path = /databases/$(database)/documents/posts/$(id);
+        return id is string && id.matches('[^/]+')
+          && exists(path) && get(path).data.get('kind', 'post') == 'post'
+          && get(path).data.get('deleted', false) == false;
+      }
+      function content(data) {
+        return (data.get('kind', 'post') == 'post' && data.get('originalId', null) == null && nonblank(data.body, 2000))
+          || (data.get('kind', 'post') == 'repost' && data.body == '' && data.get('tags', []) == [] && originalExists(data)
+            && postId == 'repost_' + request.auth.uid + '_' + data.originalId);
+      }
       allow read: if true;
-      allow create: if request.auth != null
-        && request.resource.data.keys().hasAll(['body', 'authorId', 'authorName', 'createdAt'])
-        && request.resource.data.keys().hasOnly(['body', 'authorId', 'authorName', 'createdAt'])
+      allow create: if signedIn() && fields(request.resource.data)
         && request.resource.data.authorId == request.auth.uid
-        && request.resource.data.body is string
-        && request.resource.data.body.size() >= 1
-        && request.resource.data.body.size() <= 2000
-        && request.resource.data.body.matches('[\\s\\S]*[^\\s][\\s\\S]*')
-        && request.resource.data.authorName is string
-        && request.resource.data.authorName.size() >= 1
-        && request.resource.data.authorName.size() <= 30
-        && request.resource.data.createdAt == request.time;
-      allow update, delete: if false;
+        && request.resource.data.createdAt == request.time
+        && !request.resource.data.keys().hasAny(['updatedAt'])
+        && request.resource.data.get('deleted', false) == false
+        && content(request.resource.data);
+      allow update: if owner() && fields(request.resource.data) && (
+        // Normal edit or content-erasing soft deletion; identity never changes.
+        (resource.data.get('deleted', false) == false
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['body', 'tags', 'updatedAt', 'deleted'])
+          && request.resource.data.updatedAt == request.time
+          && ((request.resource.data.get('deleted', false) == true && request.resource.data.body == '' && request.resource.data.get('tags', []) == [])
+            || (resource.data.get('kind', 'post') == 'post' && request.resource.data.get('deleted', false) == false && content(request.resource.data))))
+        // Reposting a previously removed reference reuses its deterministic ID.
+        || (resource.data.get('kind', 'post') == 'repost' && resource.data.get('deleted', false) == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted', 'createdAt'])
+          && request.resource.data.deleted == false && request.resource.data.createdAt == request.time && content(request.resource.data))
+      );
+      allow delete: if false;
+
+      function parent() { return get(/databases/$(database)/documents/posts/$(postId)).data; }
+      function reactable() { return signedIn() && parent().get('deleted', false) == false && parent().get('kind', 'post') == 'post'; }
+      function beforeKind() {
+        let path = /databases/$(database)/documents/posts/$(postId)/reactions/$(request.auth.uid);
+        return exists(path) ? get(path).data.kind : 'none';
+      }
+      function afterKind() {
+        let path = /databases/$(database)/documents/posts/$(postId)/reactions/$(request.auth.uid);
+        return existsAfter(path) ? getAfter(path).data.kind : 'none';
+      }
+      function oldCount(key) {
+        let path = /databases/$(database)/documents/posts/$(postId)/stats/reactions;
+        return exists(path) ? get(path).data[key] : 0;
+      }
+      function delta(kind) { return (afterKind() == kind ? 1 : 0) - (beforeKind() == kind ? 1 : 0); }
+      function validCounts(data) {
+        return data.keys().hasAll(['likes', 'dislikes']) && data.keys().hasOnly(['likes', 'dislikes'])
+          && data.likes is int && data.dislikes is int && data.likes >= 0 && data.dislikes >= 0
+          && data.likes == oldCount('likes') + delta('like')
+          && data.dislikes == oldCount('dislikes') + delta('dislike');
+      }
+      match /reactions/{uid} {
+        // Only the author can list identities. A reactor can get their own choice.
+        allow get: if signedIn() && (request.auth.uid == uid || parent().authorId == request.auth.uid);
+        allow list: if signedIn() && parent().authorId == request.auth.uid;
+        allow create, update: if reactable() && request.auth.uid == uid
+          && request.resource.data.keys().hasAll(['kind', 'name']) && request.resource.data.keys().hasOnly(['kind', 'name'])
+          && request.resource.data.kind in ['like', 'dislike'] && nonblank(request.resource.data.name, 30)
+          && validCounts(getAfter(/databases/$(database)/documents/posts/$(postId)/stats/reactions).data);
+        allow delete: if reactable() && request.auth.uid == uid
+          && validCounts(getAfter(/databases/$(database)/documents/posts/$(postId)/stats/reactions).data);
+      }
+      match /stats/{statId} {
+        allow read: if true;
+        allow create, update: if statId == 'reactions' && reactable() && validCounts(request.resource.data);
+        allow delete: if false;
+      }
     }
   }
 }
